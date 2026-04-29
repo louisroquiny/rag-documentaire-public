@@ -1,0 +1,23 @@
+# Environnement Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.streamlit/secrets.toml
+
+# Données locales
+data/
+_upload_ascii/
+filename_mapping.json
+store_name.txt
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Scripts
+ingest_gemini.py
+list_models.py
