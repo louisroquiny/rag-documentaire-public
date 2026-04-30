@@ -3,6 +3,7 @@
 venv/
 __pycache__/
 *.pyc
+.idea/
 
 # Secrets
 .env
@@ -11,8 +12,10 @@ __pycache__/
 # Données locales
 data/
 _upload_ascii/
-filename_mapping.json
+back_up_store/
+data_raw/
 store_name.txt
+
 
 # Fichiers système
 .DS_Store
@@ -21,3 +24,4 @@ Thumbs.db
 # Scripts
 ingest_gemini.py
 list_models.py
+scrape_ccecrb_types.py
