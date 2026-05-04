@@ -951,7 +951,7 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        with st.spinner("Francky fouille les documents..."):
+        with st.spinner("Francky fouille dans les documents..."):
 
             prompt = f"""
 Tu t'appelles Francky. Ne dis pas ton nom sauf si on te le demande.
