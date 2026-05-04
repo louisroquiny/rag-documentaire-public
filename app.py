@@ -615,29 +615,57 @@ def display_document_card(doc: dict, show_summary: bool = True) -> None:
 
 def display_linked_documents(linked_documents: list[dict]) -> None:
     """
-    Affiche les documents cités sous la réponse.
+    Affiche une version compacte des documents cités sous la réponse.
+    Objectif : garder la traçabilité sans prendre trop de place.
     """
     if not linked_documents:
-        st.info(
-            "Francky n'a pas trouvé de lien associé aux documents utilisés. "
-            "Cela arrive si Gemini ne renvoie ni path ni titre exploitable dans les sources techniques."
-        )
+        st.caption("Aucun lien documentaire associé n'a été trouvé.")
         return
 
-    st.markdown("### Documents cités")
-
+    unique_docs = []
     seen = set()
 
     for doc in linked_documents:
         key = doc.get("file_url") or doc.get("post_url") or doc.get("path") or doc.get("title")
 
-        if key in seen:
+        if not key or key in seen:
             continue
 
         seen.add(key)
-        display_document_card(doc, show_summary=True)
-        st.markdown("---")
+        unique_docs.append(doc)
 
+    if not unique_docs:
+        st.caption("Aucun lien documentaire associé n'a été trouvé.")
+        return
+
+    with st.expander(f"Documents cités ({len(unique_docs)})", expanded=False):
+        for doc in unique_docs:
+            title = doc.get("title") or doc.get("filename") or doc.get("path") or "Document"
+            document_type = doc.get("document_type") or doc.get("category")
+            year = doc.get("year")
+            date = doc.get("date") or doc.get("date_iso")
+            post_url = doc.get("post_url")
+            file_url = doc.get("file_url")
+
+            meta = " · ".join(str(x) for x in [document_type, date or year] if x)
+            links = []
+
+            if post_url:
+                links.append(f"[article]({post_url})")
+
+            if file_url:
+                links.append(f"[PDF]({file_url})")
+
+            suffix = " · ".join(links)
+            line = f"- **{title}**"
+
+            if meta:
+                line += f" — {meta}"
+
+            if suffix:
+                line += f" · {suffix}"
+
+            st.markdown(line)
 
 
 # ---------------------------------------------------------------------
