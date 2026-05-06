@@ -11,6 +11,7 @@ __pycache__/
 
 # Données locales
 data/
+logs/
 _upload_ascii/
 back_up_store/
 data_raw/
@@ -26,3 +27,4 @@ Thumbs.db
 ingest_gemini.py
 list_models.py
 scrape_ccecrb_types.py
+/ingest_gemini_update.py
