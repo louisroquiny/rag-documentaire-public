@@ -254,7 +254,7 @@ def render_coverage_box(message: str) -> None:
     st.info(message)
 
 
-def render_instructions(instructions: str) -> None:
-    st.markdown("### Instructions de Francky")
+def render_instructions(instructions: str, assistant_name: str = "Archie") -> None:
+    st.markdown(f"### Instructions de {assistant_name}")
     st.caption("Ces instructions sont celles envoyées au modèle avant chaque question.")
     st.code(instructions, language="markdown")
