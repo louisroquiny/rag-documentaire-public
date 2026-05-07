@@ -5,6 +5,7 @@ from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
 from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt
 from src.source_linking import build_linked_documents, extract_used_source_titles
+from src.theme import apply_archie_theme
 from src.ui import (
     display_linked_documents,
     render_catalogue,
@@ -22,6 +23,7 @@ st.set_page_config(
     page_icon="📚",
     layout="wide",
 )
+apply_archie_theme()
 
 
 config = load_config()
