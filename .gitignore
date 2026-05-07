@@ -28,3 +28,6 @@ ingest_gemini.py
 list_models.py
 scrape_ccecrb_types.py
 /ingest_gemini_update.py
+/analyse_quota_gemini.py
+/ingest_gemini_selection.py
+/ingest_gemini_v2.py

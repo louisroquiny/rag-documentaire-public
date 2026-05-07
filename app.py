@@ -1,6 +1,7 @@
 import csv
 import os
 import json
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -37,7 +38,12 @@ def get_secret(name: str, default: str | None = None) -> str | None:
 
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 FILE_SEARCH_STORE = get_secret("FILE_SEARCH_STORE")
+FILE_SEARCH_SELECTION_FILE = get_secret(
+    "FILE_SEARCH_SELECTION_FILE",
+    "analyse_gemini/inventaire_selection_gemini.json",
+)
 INVENTAIRE_JSON_FILE = Path("inventaire.json")
+DATA_DIR = Path("data")
 
 if not GEMINI_API_KEY:
     st.error("Secret manquant : GEMINI_API_KEY")
@@ -178,6 +184,189 @@ def load_inventory():
 
 
 INVENTORY, INVENTORY_BY_PATH = load_inventory()
+
+
+# ---------------------------------------------------------------------
+# Couverture de la base indexee Gemini
+# ---------------------------------------------------------------------
+
+def load_selection_paths(selection_file: str | None) -> tuple[set[str], bool]:
+    """
+    Lit l'inventaire de selection genere par analyse_quota_gemini.py.
+
+    Retourne :
+    - l'ensemble des chemins normalises selectionnes pour Gemini ;
+    - un booleen indiquant si le fichier de selection existe vraiment.
+
+    Si aucun fichier de selection n'est configure ou trouve, l'application
+    considere l'inventaire complet comme reference d'affichage.
+    """
+    if not selection_file:
+        return set(), False
+
+    selection_path = Path(str(selection_file))
+
+    if not selection_path.exists():
+        return set(), False
+
+    try:
+        data = json.loads(selection_path.read_text(encoding="utf-8"))
+    except Exception:
+        return set(), False
+
+    selected_paths = set()
+
+    if isinstance(data, dict):
+        items = data.items()
+    elif isinstance(data, list):
+        items = [("", row) for row in data if isinstance(row, dict)]
+    else:
+        return set(), False
+
+    for key, row in items:
+        if not isinstance(row, dict):
+            continue
+
+        path = row.get("path") or key
+        path_key = normalize_path(path)
+
+        if path_key:
+            selected_paths.add(path_key)
+
+    return selected_paths, True
+
+
+def unique_inventory_rows() -> list[dict]:
+    """
+    Retourne les lignes uniques de l'inventaire complet.
+    INVENTORY_BY_PATH est la source la plus fiable.
+    """
+    rows = []
+    seen = set()
+
+    source_rows = INVENTORY_BY_PATH.values() if INVENTORY_BY_PATH else INVENTORY.values()
+
+    for row in source_rows:
+        key = (
+            row.get("file_url")
+            or row.get("post_url")
+            or row.get("path")
+            or row.get("title")
+        )
+
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        rows.append(row)
+
+    return rows
+
+
+def parse_inventory_date(row: dict):
+    date_iso = str(row.get("date_iso", "") or "").strip()
+
+    if not date_iso:
+        return None
+
+    try:
+        return datetime.strptime(date_iso, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def format_date_fr_from_iso(date_iso: str | None) -> str:
+    if not date_iso:
+        return "date inconnue"
+
+    try:
+        return datetime.strptime(str(date_iso), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return str(date_iso)
+
+
+def local_pdf_exists_for_row(row: dict) -> bool:
+    """
+    Verifie si le PDF selectionne existe localement dans data/.
+
+    Cela evite d'annoncer comme indexables les quelques lignes de selection
+    dont le chemin de l'inventaire ne correspond a aucun PDF local.
+    """
+    path = normalize_path(row.get("path"))
+
+    if not path:
+        return False
+
+    if not DATA_DIR.exists():
+        # Sur Streamlit Cloud, le dossier data peut ne pas etre present.
+        # Dans ce cas, on fait confiance au fichier de selection.
+        return True
+
+    return (DATA_DIR / path).exists()
+
+
+def compute_database_coverage() -> dict:
+    """
+    Calcule ce que la base Gemini est censee contenir par rapport a
+    l'inventaire complet local.
+    """
+    all_rows = unique_inventory_rows()
+    total_documents = len(all_rows)
+    selected_paths, selection_file_found = load_selection_paths(FILE_SEARCH_SELECTION_FILE)
+
+    if selection_file_found and selected_paths:
+        indexed_rows = [
+            row for row in all_rows
+            if normalize_path(row.get("path")) in selected_paths
+            and local_pdf_exists_for_row(row)
+        ]
+        selection_mode = "selection"
+    else:
+        indexed_rows = all_rows
+        selection_mode = "full_inventory"
+
+    dated_rows = [row for row in indexed_rows if parse_inventory_date(row)]
+    oldest_row = min(dated_rows, key=parse_inventory_date) if dated_rows else None
+    newest_row = max(dated_rows, key=parse_inventory_date) if dated_rows else None
+
+    oldest_date_iso = oldest_row.get("date_iso") if oldest_row else ""
+    newest_date_iso = newest_row.get("date_iso") if newest_row else ""
+
+    return {
+        "selection_file": str(FILE_SEARCH_SELECTION_FILE or ""),
+        "selection_file_found": selection_file_found,
+        "selection_mode": selection_mode,
+        "total_documents": total_documents,
+        "indexed_documents": len(indexed_rows),
+        "selected_paths_count": len(selected_paths),
+        "selection_missing_local_count": max(0, len(selected_paths) - len(indexed_rows)) if selection_file_found and selected_paths else 0,
+        "indexed_paths": selected_paths,
+        "indexed_rows": indexed_rows,
+        "oldest_date_iso": oldest_date_iso,
+        "oldest_date_fr": format_date_fr_from_iso(oldest_date_iso),
+        "newest_date_iso": newest_date_iso,
+        "newest_date_fr": format_date_fr_from_iso(newest_date_iso),
+    }
+
+
+DATABASE_COVERAGE = compute_database_coverage()
+
+
+def database_coverage_sentence() -> str:
+    total = DATABASE_COVERAGE["total_documents"]
+    indexed = DATABASE_COVERAGE["indexed_documents"]
+    oldest = DATABASE_COVERAGE["oldest_date_fr"]
+
+    if total and indexed:
+        return (
+            f"La base documentaire indexee contient {indexed} document(s) sur {total} "
+            f"dans l'inventaire complet. Les documents consultables remontent jusqu'au {oldest}."
+        )
+
+    if total:
+        return f"L'inventaire contient {total} document(s), mais la couverture indexee n'a pas pu etre determinee."
+
+    return "La couverture de la base documentaire n'a pas pu etre determinee."
 
 
 # ---------------------------------------------------------------------
@@ -674,29 +863,12 @@ def display_linked_documents(linked_documents: list[dict]) -> None:
 
 def inventory_rows() -> list[dict]:
     """
-    Retourne les lignes uniques de l'inventaire.
-    INVENTORY_BY_PATH est la source la plus fiable.
+    Retourne les lignes du catalogue affichable.
+    Par defaut, il s'agit des documents selectionnes/indexes dans Gemini,
+    pas de l'inventaire complet, afin de ne pas promettre des documents
+    que Francky ne peut pas fouiller.
     """
-    rows = []
-    seen = set()
-
-    source_rows = INVENTORY_BY_PATH.values() if INVENTORY_BY_PATH else INVENTORY.values()
-
-    for row in source_rows:
-        key = (
-            row.get("file_url")
-            or row.get("post_url")
-            or row.get("path")
-            or row.get("title")
-        )
-
-        if not key or key in seen:
-            continue
-
-        seen.add(key)
-        rows.append(row)
-
-    return rows
+    return list(DATABASE_COVERAGE.get("indexed_rows") or [])
 
 
 def distinct_values(rows: list[dict], key: str) -> list[str]:
@@ -824,9 +996,9 @@ def render_catalogue() -> None:
         reverse=True,
     )
 
-    st.caption(f"{len(filtered)} document(s) trouvé(s)")
+    st.caption(f"{len(filtered)} document(s) trouvé(s) dans les documents indexés")
 
-    with st.expander("Afficher le catalogue", expanded=False):
+    with st.expander("Afficher le catalogue des documents indexés", expanded=False):
         for row in filtered[:200]:
             display_catalogue_row(row)
             st.markdown("---")
@@ -843,6 +1015,7 @@ st.title("📚 Francky")
 st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, et branché sur les documents publics indexés."
 )
+st.info(database_coverage_sentence())
 
 with st.sidebar:
     st.header("Paramètres")
@@ -862,6 +1035,25 @@ with st.sidebar:
 
     st.markdown("### Base documentaire")
     st.code(FILE_SEARCH_STORE)
+
+    total_docs = DATABASE_COVERAGE["total_documents"]
+    indexed_docs = DATABASE_COVERAGE["indexed_documents"]
+    oldest_date = DATABASE_COVERAGE["oldest_date_fr"]
+    newest_date = DATABASE_COVERAGE["newest_date_fr"]
+
+    if total_docs and indexed_docs:
+        st.success(f"Base indexée : {indexed_docs} document(s) sur {total_docs}")
+        st.caption(f"Période couverte : du {oldest_date} au {newest_date}")
+    else:
+        st.warning("Couverture de la base indexée indisponible")
+
+    if DATABASE_COVERAGE["selection_file_found"]:
+        st.caption(f"Sélection utilisée : `{DATABASE_COVERAGE['selection_file']}`")
+        missing_local = DATABASE_COVERAGE.get("selection_missing_local_count", 0)
+        if missing_local:
+            st.caption(f"{missing_local} document(s) de la sélection n'ont pas de PDF local correspondant et ne sont pas comptés comme indexables.")
+    else:
+        st.caption("Aucun fichier de sélection trouvé : affichage basé sur l'inventaire complet.")
 
     st.markdown("### Inventaire")
     if INVENTORY:
@@ -959,6 +1151,8 @@ Tu t'appelles Francky. Ne dis pas ton nom sauf si on te le demande.
 Tu es l'assistant IA du centre de documentation du Conseil central de l'économie, aussi appelé CCE.
 Tu réponds aux collaborateurs et collaboratrices du Conseil.
 Tu connais uniquement les documents publics indexés dans la base documentaire.
+Couverture actuelle de cette base : {database_coverage_sentence()}
+Si une question demande des documents plus anciens que cette couverture, signale clairement que la base indexée ne remonte pas jusque-là.
 Tu es un peu speed dans ton style : dynamique, direct, efficace.
 Mais tu restes toujours très serviable, poli, clair et professionnel.
 
