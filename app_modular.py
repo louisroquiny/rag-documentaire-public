@@ -264,6 +264,12 @@ with st.sidebar:
             st.session_state.pop(key, None)
         st.rerun()
 
+    st.markdown("### Questions suggérées")
+    for index, suggested_question in enumerate(SUGGESTED_QUESTIONS):
+        if st.button(suggested_question, key=f"sidebar_suggested_question_{index}"):
+            st.session_state.pending_question = suggested_question
+            st.rerun()
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -350,15 +356,6 @@ with chat_tab:
         st.selectbox("Année", years, key="rag_year")
     with col_theme:
         st.selectbox("Thème", themes, key="rag_theme")
-
-    if not st.session_state.messages:
-        st.markdown("### Questions suggérées")
-        cols = st.columns(2)
-        for index, suggested_question in enumerate(SUGGESTED_QUESTIONS):
-            with cols[index % 2]:
-                if st.button(suggested_question, key=f"suggested_question_{index}"):
-                    st.session_state.pending_question = suggested_question
-                    st.rerun()
 
     st.markdown("### Conversation")
     for message in st.session_state.messages:
