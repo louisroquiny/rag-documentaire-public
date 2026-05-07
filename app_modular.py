@@ -52,6 +52,16 @@ model = render_sidebar(
     database_coverage=DATABASE_COVERAGE,
 )
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# st.chat_input est volontairement au niveau de la page, pas dans un onglet,
+# pour rester accroché en bas comme dans l'application initiale.
+question = st.chat_input("Ex. Quels documents parlent de mobilité durable ?")
+
+if question:
+    st.session_state.messages.append({"role": "user", "content": question})
+
 chat_tab, catalogue_tab, instructions_tab = st.tabs(
     ["Questionner Archie", "Catalogue", "Instructions d'Archie"]
 )
@@ -63,21 +73,11 @@ with instructions_tab:
     render_instructions(ARCHIE_INSTRUCTIONS, assistant_name="Archie")
 
 with chat_tab:
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    question = st.chat_input("Ex. Quels documents parlent de mobilité durable ?")
-
     if question:
-        st.session_state.messages.append({"role": "user", "content": question})
-
-        with st.chat_message("user"):
-            st.markdown(question)
-
         with st.chat_message("assistant"):
             with st.spinner("Archie fouille les documents..."):
                 try:
