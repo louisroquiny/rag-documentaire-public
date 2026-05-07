@@ -34,9 +34,17 @@ Style attendu :
 FRANCKY_INSTRUCTIONS = ARCHIE_INSTRUCTIONS
 
 
-def build_prompt(question: str) -> str:
+def build_prompt(question: str, constraints: str = "") -> str:
+    constraints_block = ""
+    if constraints.strip():
+        constraints_block = f"""
+
+Contraintes de recherche demandées par l'utilisateur :
+{constraints.strip()}
+"""
+
     return f"""
-{ARCHIE_INSTRUCTIONS}
+{ARCHIE_INSTRUCTIONS}{constraints_block}
 
 Question de l'utilisateur :
 {question}
