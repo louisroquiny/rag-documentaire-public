@@ -3,6 +3,15 @@ import streamlit as st
 from src.catalogue import distinct_values, filter_catalogue_rows, inventory_rows
 
 
+FILE_SEARCH_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-3.1-pro-preview",
+]
+
+
 def display_document_card(doc: dict, show_summary: bool = True) -> None:
     """Affiche une fiche document enrichie."""
     title = doc.get("title") or doc.get("path") or "Document"
@@ -112,6 +121,38 @@ def display_linked_documents(linked_documents: list[dict]) -> None:
             st.markdown(line)
 
 
+def _filter_for_options(
+    rows: list[dict],
+    category: str,
+    theme: str,
+    section: str,
+    year: str,
+    exclude: str,
+) -> list[dict]:
+    """Filtre les lignes pour calculer les options disponibles d'un champ."""
+    filtered = rows
+
+    if exclude != "category" and category != "Toutes":
+        filtered = [row for row in filtered if str(row.get("category", "")).strip() == category]
+    if exclude != "theme" and theme != "Tous":
+        filtered = [row for row in filtered if str(row.get("theme", "")).strip() == theme]
+    if exclude != "section" and section != "Toutes":
+        filtered = [row for row in filtered if str(row.get("section", "")).strip() == section]
+    if exclude != "year" and year != "Toutes":
+        filtered = [row for row in filtered if str(row.get("year", "")).strip() == year]
+
+    return filtered
+
+
+def _selectbox_with_valid_default(label: str, options: list[str], key: str, default: str) -> str:
+    current = st.session_state.get(key, default)
+    if current not in options:
+        current = default
+        st.session_state[key] = default
+
+    return st.selectbox(label, options, index=options.index(current), key=key)
+
+
 def render_catalogue(database_coverage: dict) -> None:
     rows = inventory_rows(database_coverage)
 
@@ -119,15 +160,35 @@ def render_catalogue(database_coverage: dict) -> None:
         st.info("Catalogue indisponible : inventaire non chargé.")
         return
 
-    categories = ["Toutes"] + distinct_values(rows, "category")
-    themes = ["Tous"] + distinct_values(rows, "theme")
-    sections = ["Toutes"] + distinct_values(rows, "section")
-    years = ["Toutes"] + sorted(distinct_values(rows, "year"), reverse=True)
+    current_category = st.session_state.get("catalogue_category", "Toutes")
+    current_theme = st.session_state.get("catalogue_theme", "Tous")
+    current_section = st.session_state.get("catalogue_section", "Toutes")
+    current_year = st.session_state.get("catalogue_year", "Toutes")
 
-    selected_category = st.selectbox("Catégorie", categories, key="catalogue_category")
-    selected_theme = st.selectbox("Thème", themes, key="catalogue_theme")
-    selected_section = st.selectbox("Section", sections, key="catalogue_section")
-    selected_year = st.selectbox("Année", years, key="catalogue_year")
+    category_options = ["Toutes"] + distinct_values(
+        _filter_for_options(rows, current_category, current_theme, current_section, current_year, exclude="category"),
+        "category",
+    )
+    theme_options = ["Tous"] + distinct_values(
+        _filter_for_options(rows, current_category, current_theme, current_section, current_year, exclude="theme"),
+        "theme",
+    )
+    section_options = ["Toutes"] + distinct_values(
+        _filter_for_options(rows, current_category, current_theme, current_section, current_year, exclude="section"),
+        "section",
+    )
+    year_options = ["Toutes"] + sorted(
+        distinct_values(
+            _filter_for_options(rows, current_category, current_theme, current_section, current_year, exclude="year"),
+            "year",
+        ),
+        reverse=True,
+    )
+
+    selected_category = _selectbox_with_valid_default("Catégorie", category_options, "catalogue_category", "Toutes")
+    selected_theme = _selectbox_with_valid_default("Thème", theme_options, "catalogue_theme", "Tous")
+    selected_section = _selectbox_with_valid_default("Section", section_options, "catalogue_section", "Toutes")
+    selected_year = _selectbox_with_valid_default("Année", year_options, "catalogue_year", "Toutes")
 
     catalogue_query = st.text_input(
         "Recherche dans le catalogue",
@@ -158,32 +219,15 @@ def render_catalogue(database_coverage: dict) -> None:
             st.info("Affichage limité aux 200 premiers résultats. Affine les filtres pour voir moins de documents.")
 
 
-def render_sidebar(config, inventory: dict, database_coverage: dict) -> tuple[str, float]:
+def render_sidebar(config, inventory: dict, database_coverage: dict) -> str:
     with st.sidebar:
         st.header("Paramètres")
 
-        file_search_models = [
-            "gemini-2.5-flash-lite",
-            "gemini-3.1-flash-lite-preview",
-            "gemini-3-flash-preview",
-            "gemini-2.5-pro",
-            "gemini-3.1-pro-preview",
-        ]
-
         model = st.selectbox(
             "Modèle",
-            file_search_models,
+            FILE_SEARCH_MODELS,
             index=0,
             help="Seuls les modèles compatibles avec Gemini File Search sont listés ici.",
-        )
-
-        temperature = st.slider(
-            "Température",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.1,
-            step=0.1,
-            help="Plus la valeur est basse, plus les réponses sont stables et factuelles.",
         )
 
         st.markdown("### Base documentaire")
@@ -203,4 +247,14 @@ def render_sidebar(config, inventory: dict, database_coverage: dict) -> tuple[st
         st.markdown("### Conseils")
         st.write("Pose une question précise : thème, période, type de document, recommandation, position ou comparaison.")
 
-    return model, temperature
+    return model
+
+
+def render_coverage_box(message: str) -> None:
+    st.info(message)
+
+
+def render_instructions(instructions: str) -> None:
+    st.markdown("### Instructions de Francky")
+    st.caption("Ces instructions sont celles envoyées au modèle avant chaque question.")
+    st.code(instructions, language="markdown")
