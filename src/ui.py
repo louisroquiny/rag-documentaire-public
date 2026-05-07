@@ -289,7 +289,7 @@ def render_sidebar(config, inventory: dict, database_coverage: dict) -> str:
 
 
 def render_coverage_box(message: str) -> None:
-    st.caption(message)
+    st.info(f"<small>{message}</small>")
 
 
 def render_instructions(instructions: str, assistant_name: str = "Archie") -> None:
