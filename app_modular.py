@@ -3,7 +3,7 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
-from src.prompts import FRANCKY_INSTRUCTIONS, build_prompt
+from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt
 from src.source_linking import build_linked_documents, extract_used_source_titles
 from src.ui import (
     display_linked_documents,
@@ -18,7 +18,7 @@ DEFAULT_TEMPERATURE = 0.1
 
 
 st.set_page_config(
-    page_title="Francky - Assistant documentaire",
+    page_title="Archie - Assistant documentaire",
     page_icon="📚",
     layout="wide",
 )
@@ -39,7 +39,7 @@ DATABASE_COVERAGE = compute_database_coverage(
 )
 
 
-st.title("📚 Francky")
+st.title("📚 Archie")
 st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, "
     "et branché sur les documents publics indexés."
@@ -53,14 +53,14 @@ model = render_sidebar(
 )
 
 chat_tab, catalogue_tab, instructions_tab = st.tabs(
-    ["Questionner Francky", "Catalogue", "Instructions de Francky"]
+    ["Questionner Archie", "Catalogue", "Instructions d'Archie"]
 )
 
 with catalogue_tab:
     render_catalogue(DATABASE_COVERAGE)
 
 with instructions_tab:
-    render_instructions(FRANCKY_INSTRUCTIONS)
+    render_instructions(ARCHIE_INSTRUCTIONS, assistant_name="Archie")
 
 with chat_tab:
     if "messages" not in st.session_state:
@@ -72,12 +72,12 @@ with chat_tab:
 
     with st.form("question_form", clear_on_submit=False):
         question = st.text_area(
-            "Question à Francky",
+            "Question à Archie",
             key="question_input",
             placeholder="Ex. Quels documents parlent de mobilité durable ?",
             height=110,
         )
-        submitted = st.form_submit_button("Envoyer à Francky")
+        submitted = st.form_submit_button("Envoyer à Archie")
 
     if submitted and question.strip():
         final_question = question.strip()
@@ -87,7 +87,7 @@ with chat_tab:
             st.markdown(final_question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Francky fouille les documents..."):
+            with st.spinner("Archie fouille les documents..."):
                 try:
                     response = client.models.generate_content(
                         model=model,
@@ -131,4 +131,4 @@ with chat_tab:
                     st.error(error_message)
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
     elif submitted:
-        st.warning("Écris une question avant de l'envoyer à Francky.")
+        st.warning("Écris une question avant de l'envoyer à Archie.")
