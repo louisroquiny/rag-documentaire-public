@@ -11,6 +11,14 @@ FILE_SEARCH_MODELS = [
     "gemini-3.1-pro-preview",
 ]
 
+CATALOGUE_FILTER_KEYS = [
+    "catalogue_category",
+    "catalogue_theme",
+    "catalogue_section",
+    "catalogue_year",
+    "catalogue_query",
+]
+
 
 def display_document_card(doc: dict, show_summary: bool = True) -> None:
     """Affiche une fiche document enrichie."""
@@ -153,12 +161,44 @@ def _selectbox_with_valid_default(label: str, options: list[str], key: str, defa
     return st.selectbox(label, options, index=options.index(current), key=key)
 
 
+def _reset_catalogue_filters() -> None:
+    defaults = {
+        "catalogue_category": "Toutes",
+        "catalogue_theme": "Tous",
+        "catalogue_section": "Toutes",
+        "catalogue_year": "Toutes",
+        "catalogue_query": "",
+    }
+    for key, value in defaults.items():
+        st.session_state[key] = value
+
+
+def _sort_catalogue_rows(rows: list[dict], sort_mode: str) -> list[dict]:
+    if sort_mode == "Date ancienne":
+        return sorted(rows, key=lambda row: row.get("date_iso") or row.get("date") or "")
+    if sort_mode == "Type":
+        return sorted(rows, key=lambda row: (row.get("document_type") or row.get("category") or "", row.get("title") or ""))
+    if sort_mode == "Thème":
+        return sorted(rows, key=lambda row: (row.get("theme") or "", row.get("title") or ""))
+    return sorted(rows, key=lambda row: row.get("date_iso") or row.get("date") or "", reverse=True)
+
+
 def render_catalogue(database_coverage: dict) -> None:
     rows = inventory_rows(database_coverage)
 
     if not rows:
         st.info("Catalogue indisponible : inventaire non chargé.")
         return
+
+    col_reset, col_sort = st.columns([1, 2])
+    with col_reset:
+        st.button("Réinitialiser les filtres", on_click=_reset_catalogue_filters)
+    with col_sort:
+        sort_mode = st.selectbox(
+            "Trier par",
+            ["Date récente", "Date ancienne", "Type", "Thème"],
+            key="catalogue_sort_mode",
+        )
 
     current_category = st.session_state.get("catalogue_category", "Toutes")
     current_theme = st.session_state.get("catalogue_theme", "Tous")
@@ -206,7 +246,7 @@ def render_catalogue(database_coverage: dict) -> None:
         query=catalogue_query,
     )
 
-    filtered = sorted(filtered, key=lambda row: row.get("date_iso") or row.get("date") or "", reverse=True)
+    filtered = _sort_catalogue_rows(filtered, sort_mode)
 
     st.caption(f"{len(filtered)} document(s) trouvé(s) dans les documents indexés")
 
