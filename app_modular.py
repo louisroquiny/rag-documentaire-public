@@ -2,7 +2,6 @@ import streamlit as st
 from google.genai import types
 
 from src.config import create_gemini_client, load_config
-from src.feedback import append_feedback, feedback_file_exists, read_feedback_bytes
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
 from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt
 from src.source_linking import build_linked_documents, extract_used_source_titles
@@ -83,101 +82,6 @@ def build_user_constraints() -> str:
     return "\n".join(constraints)
 
 
-def documents_to_markdown(documents: list[dict]) -> str:
-    if not documents:
-        return "Aucun document cité."
-
-    lines = []
-    for doc in documents:
-        title = doc.get("title") or doc.get("path") or "Document"
-        lines.append(f"- **{title}**")
-        meta = []
-        for key in ["document_type", "category", "theme", "date", "year"]:
-            value = doc.get(key)
-            if value:
-                meta.append(str(value))
-        if meta:
-            lines.append(f"  - Métadonnées : {' · '.join(meta)}")
-        if doc.get("post_url"):
-            lines.append(f"  - Article : {doc['post_url']}")
-        if doc.get("file_url"):
-            lines.append(f"  - PDF : {doc['file_url']}")
-    return "\n".join(lines)
-
-
-def build_markdown_export(question: str, answer: str, documents: list[dict]) -> str:
-    return f"""# Réponse d'Archie
-
-## Question
-
-{question or ''}
-
-## Réponse
-
-{answer or ''}
-
-## Documents cités
-
-{documents_to_markdown(documents)}
-"""
-
-
-def render_export_tools() -> None:
-    question = st.session_state.get("last_question", "")
-    answer = st.session_state.get("last_answer", "")
-    documents = st.session_state.get("last_documents", [])
-
-    if not answer:
-        return
-
-    markdown_export = build_markdown_export(question, answer, documents)
-
-    with st.expander("Exporter / réutiliser la dernière réponse", expanded=False):
-        st.download_button(
-            "Exporter en Markdown",
-            data=markdown_export,
-            file_name="archie_reponse.md",
-            mime="text/markdown",
-            key="download_markdown_answer",
-        )
-        st.download_button(
-            "Exporter en fiche documentaire",
-            data=markdown_export,
-            file_name="archie_fiche_documentaire.md",
-            mime="text/markdown",
-            key="download_documentary_note",
-        )
-        st.text_area(
-            "Copier la réponse",
-            value=answer,
-            height=220,
-            key="copy_last_answer_area",
-        )
-
-
-def render_feedback_controls() -> None:
-    question = st.session_state.get("last_question", "")
-    answer = st.session_state.get("last_answer", "")
-    documents = st.session_state.get("last_documents", [])
-    last_model = st.session_state.get("last_model", "")
-
-    if not answer:
-        return
-
-    st.markdown("### Feedback sur la dernière réponse")
-    col_good, col_bad = st.columns(2)
-
-    with col_good:
-        if st.button("👍 Utile", key="feedback_good"):
-            saved = append_feedback(question, answer, last_model, "utile", documents)
-            st.success("Feedback enregistré." if saved else "Feedback reçu, mais non enregistré sur disque.")
-
-    with col_bad:
-        if st.button("👎 Pas utile", key="feedback_bad"):
-            saved = append_feedback(question, answer, last_model, "pas_utile", documents)
-            st.warning("Feedback enregistré." if saved else "Feedback reçu, mais non enregistré sur disque.")
-
-
 def render_coverage_tab(database_coverage: dict) -> None:
     st.markdown("### Couverture de la base")
     col1, col2, col3 = st.columns(3)
@@ -211,38 +115,6 @@ def render_limits_tab() -> None:
 - Les réponses peuvent varier légèrement selon le modèle choisi et les documents retrouvés.
 """
     )
-
-
-def render_feedback_improvement_tab() -> None:
-    st.markdown("### Amélioration par feedback")
-    st.write(
-        "Les feedbacks n'entraînent pas automatiquement le modèle Gemini. "
-        "Ils servent plutôt à améliorer Archie de façon contrôlée."
-    )
-    st.markdown(
-        """
-Concrètement, les feedbacks peuvent servir à :
-
-1. Repérer les questions où Archie ne retrouve pas les bons documents.
-2. Identifier les sources souvent absentes ou mal liées.
-3. Corriger les métadonnées de l'inventaire.
-4. Améliorer les instructions système d'Archie.
-5. Construire un jeu d'évaluation RAG avec des questions réelles.
-6. Décider quels documents ajouter à la sélection indexée quand la mémoire est limitée.
-
-Le cycle recommandé est : feedback → analyse CSV → correction inventaire/prompt/sélection → test sur questions réelles.
-"""
-    )
-
-    if feedback_file_exists():
-        st.download_button(
-            "Télécharger les feedbacks CSV",
-            data=read_feedback_bytes(),
-            file_name="feedback_archie.csv",
-            mime="text/csv",
-        )
-    else:
-        st.caption("Aucun fichier feedback_archie.csv n'a encore été créé.")
 
 
 st.title("📚 Archie")
@@ -312,26 +184,17 @@ if question:
                 "source_titles": source_titles,
             }
         )
-        st.session_state.last_question = question
-        st.session_state.last_answer = answer
-        st.session_state.last_documents = linked_documents
-        st.session_state.last_model = model
 
     except Exception as e:
         error_message = f"Erreur pendant la génération : {e}"
         st.session_state.messages.append({"role": "assistant", "content": error_message})
-        st.session_state.last_question = question
-        st.session_state.last_answer = error_message
-        st.session_state.last_documents = []
-        st.session_state.last_model = model
 
-chat_tab, catalogue_tab, coverage_tab, limits_tab, feedback_tab, instructions_tab = st.tabs(
+chat_tab, catalogue_tab, coverage_tab, limits_tab, instructions_tab = st.tabs(
     [
         "Questionner Archie",
         "Catalogue",
         "Couverture",
         "Limites",
-        "Feedback & amélioration",
         "Instructions d'Archie",
     ]
 )
@@ -362,15 +225,11 @@ with chat_tab:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message["role"] == "assistant":
-                if message.get("documents"):
-                    display_linked_documents(message.get("documents", []))
+                display_linked_documents(message.get("documents", []))
                 if message.get("source_titles"):
                     with st.expander("Sources techniques détectées"):
                         for title in message.get("source_titles", []):
                             st.write("-", title)
-
-    render_export_tools()
-    render_feedback_controls()
 
 with catalogue_tab:
     render_catalogue(DATABASE_COVERAGE)
@@ -380,9 +239,6 @@ with coverage_tab:
 
 with limits_tab:
     render_limits_tab()
-
-with feedback_tab:
-    render_feedback_improvement_tab()
 
 with instructions_tab:
     render_instructions(ARCHIE_INSTRUCTIONS, assistant_name="Archie")
