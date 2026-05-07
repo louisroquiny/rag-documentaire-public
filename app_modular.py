@@ -70,28 +70,20 @@ with chat_tab:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    with st.form("question_form", clear_on_submit=False):
-        question = st.text_area(
-            "Question à Archie",
-            key="question_input",
-            placeholder="Ex. Quels documents parlent de mobilité durable ?",
-            height=110,
-        )
-        submitted = st.form_submit_button("Envoyer à Archie")
+    question = st.chat_input("Ex. Quels documents parlent de mobilité durable ?")
 
-    if submitted and question.strip():
-        final_question = question.strip()
-        st.session_state.messages.append({"role": "user", "content": final_question})
+    if question:
+        st.session_state.messages.append({"role": "user", "content": question})
 
         with st.chat_message("user"):
-            st.markdown(final_question)
+            st.markdown(question)
 
         with st.chat_message("assistant"):
             with st.spinner("Archie fouille les documents..."):
                 try:
                     response = client.models.generate_content(
                         model=model,
-                        contents=build_prompt(final_question),
+                        contents=build_prompt(question),
                         config=types.GenerateContentConfig(
                             temperature=DEFAULT_TEMPERATURE,
                             tools=[
@@ -130,5 +122,3 @@ with chat_tab:
                     error_message = f"Erreur pendant la génération : {e}"
                     st.error(error_message)
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
-    elif submitted:
-        st.warning("Écris une question avant de l'envoyer à Archie.")
