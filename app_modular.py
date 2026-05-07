@@ -141,46 +141,6 @@ pending_question = st.session_state.pop("pending_question", None)
 chat_question = st.chat_input("Ex. Quels documents parlent de mobilité durable ?")
 question = pending_question or chat_question
 
-if question:
-    st.session_state.messages.append({"role": "user", "content": question})
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=build_prompt(question, constraints=build_user_constraints()),
-            config=types.GenerateContentConfig(
-                temperature=DEFAULT_TEMPERATURE,
-                tools=[
-                    types.Tool(
-                        file_search=types.FileSearch(
-                            file_search_store_names=[config.file_search_store]
-                        )
-                    )
-                ],
-            ),
-        )
-
-        answer = response.text or "Aucune réponse générée."
-        linked_documents = build_linked_documents(
-            response,
-            answer_text=answer,
-            inventory=INVENTORY,
-            inventory_by_path=INVENTORY_BY_PATH,
-        )
-        source_titles = extract_used_source_titles(response)
-
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": answer,
-                "documents": linked_documents,
-                "source_titles": source_titles,
-            }
-        )
-
-    except Exception as e:
-        error_message = f"Erreur pendant la génération : {e}"
-        st.session_state.messages.append({"role": "assistant", "content": error_message})
-
 chat_tab, catalogue_tab, coverage_tab, limits_tab, instructions_tab = st.tabs(
     [
         "Questionner Archie",
@@ -207,15 +167,75 @@ with chat_tab:
         st.selectbox("Thème", themes, key="rag_theme")
 
     st.markdown("### Conversation")
+
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message["role"] == "assistant":
-                display_linked_documents(message.get("documents", []))
+                if "documents" in message:
+                    display_linked_documents(message.get("documents", []))
                 if message.get("source_titles"):
                     with st.expander("Sources techniques détectées"):
                         for title in message.get("source_titles", []):
                             st.write("-", title)
+
+    if question:
+        st.session_state.messages.append({"role": "user", "content": question})
+
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Archie fouille les documents..."):
+                try:
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=build_prompt(question, constraints=build_user_constraints()),
+                        config=types.GenerateContentConfig(
+                            temperature=DEFAULT_TEMPERATURE,
+                            tools=[
+                                types.Tool(
+                                    file_search=types.FileSearch(
+                                        file_search_store_names=[config.file_search_store]
+                                    )
+                                )
+                            ],
+                        ),
+                    )
+
+                    answer = response.text or "Aucune réponse générée."
+                    st.markdown(answer)
+
+                    linked_documents = build_linked_documents(
+                        response,
+                        answer_text=answer,
+                        inventory=INVENTORY,
+                        inventory_by_path=INVENTORY_BY_PATH,
+                    )
+                    display_linked_documents(linked_documents)
+
+                    with st.expander("Sources techniques détectées"):
+                        source_titles = extract_used_source_titles(response)
+
+                        if source_titles:
+                            for title in source_titles:
+                                st.write("-", title)
+                        else:
+                            st.write("Aucune source technique détectée dans la réponse.")
+
+                    st.session_state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": answer,
+                            "documents": linked_documents,
+                            "source_titles": source_titles,
+                        }
+                    )
+
+                except Exception as e:
+                    error_message = f"Erreur pendant la génération : {e}"
+                    st.error(error_message)
+                    st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 with catalogue_tab:
     render_catalogue(DATABASE_COVERAGE)
