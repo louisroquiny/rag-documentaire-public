@@ -3,9 +3,18 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
-from src.prompts import build_prompt
+from src.prompts import FRANCKY_INSTRUCTIONS, build_prompt
 from src.source_linking import build_linked_documents, extract_used_source_titles
-from src.ui import display_linked_documents, render_catalogue, render_sidebar
+from src.ui import (
+    display_linked_documents,
+    render_catalogue,
+    render_coverage_box,
+    render_instructions,
+    render_sidebar,
+)
+
+
+DEFAULT_TEMPERATURE = 0.1
 
 
 st.set_page_config(
@@ -35,18 +44,23 @@ st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, "
     "et branché sur les documents publics indexés."
 )
-st.caption(database_coverage_sentence(DATABASE_COVERAGE))
+render_coverage_box(database_coverage_sentence(DATABASE_COVERAGE))
 
-model, temperature = render_sidebar(
+model = render_sidebar(
     config=config,
     inventory=INVENTORY,
     database_coverage=DATABASE_COVERAGE,
 )
 
-chat_tab, catalogue_tab = st.tabs(["Questionner Francky", "Catalogue"])
+chat_tab, catalogue_tab, instructions_tab = st.tabs(
+    ["Questionner Francky", "Catalogue", "Instructions de Francky"]
+)
 
 with catalogue_tab:
     render_catalogue(DATABASE_COVERAGE)
+
+with instructions_tab:
+    render_instructions(FRANCKY_INSTRUCTIONS)
 
 with chat_tab:
     if "messages" not in st.session_state:
@@ -56,22 +70,30 @@ with chat_tab:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    question = st.chat_input("Ex. Quels documents parlent de mobilité durable ?")
+    with st.form("question_form", clear_on_submit=False):
+        question = st.text_area(
+            "Question à Francky",
+            key="question_input",
+            placeholder="Ex. Quels documents parlent de mobilité durable ?",
+            height=110,
+        )
+        submitted = st.form_submit_button("Envoyer à Francky")
 
-    if question:
-        st.session_state.messages.append({"role": "user", "content": question})
+    if submitted and question.strip():
+        final_question = question.strip()
+        st.session_state.messages.append({"role": "user", "content": final_question})
 
         with st.chat_message("user"):
-            st.markdown(question)
+            st.markdown(final_question)
 
         with st.chat_message("assistant"):
             with st.spinner("Francky fouille les documents..."):
                 try:
                     response = client.models.generate_content(
                         model=model,
-                        contents=build_prompt(question),
+                        contents=build_prompt(final_question),
                         config=types.GenerateContentConfig(
-                            temperature=temperature,
+                            temperature=DEFAULT_TEMPERATURE,
                             tools=[
                                 types.Tool(
                                     file_search=types.FileSearch(
@@ -108,3 +130,5 @@ with chat_tab:
                     error_message = f"Erreur pendant la génération : {e}"
                     st.error(error_message)
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
+    elif submitted:
+        st.warning("Écris une question avant de l'envoyer à Francky.")
