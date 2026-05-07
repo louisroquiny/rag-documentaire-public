@@ -268,11 +268,15 @@ def database_coverage_sentence(database_coverage: dict) -> str:
 
     if total and indexed:
         return (
-            f"La base documentaire indexee contient {indexed} document(s) sur {total} "
+            "En raison d'espace mémoire limitée, "
+            f"la base documentaire indexée contient {indexed} document(s) sur {total} "
             f"dans l'inventaire complet. Les documents consultables remontent jusqu'au {oldest}."
         )
 
     if total:
-        return f"L'inventaire contient {total} document(s), mais la couverture indexee n'a pas pu etre determinee."
+        return (
+            "En raison d'espace mémoire limitée, "
+            f"l'inventaire contient {total} document(s), mais la couverture indexée n'a pas pu être déterminée."
+        )
 
-    return "La couverture de la base documentaire n'a pas pu etre determinee."
+    return "La couverture de la base documentaire n'a pas pu être déterminée."
