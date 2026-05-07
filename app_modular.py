@@ -109,6 +109,12 @@ def render_limits_tab() -> None:
     )
 
 
+with st.sidebar:
+    if st.button("Nouvelle conversation"):
+        for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+
 st.title("📚 Archie")
 st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, "
@@ -123,11 +129,6 @@ model = render_sidebar(
 )
 
 with st.sidebar:
-    if st.button("Nouvelle conversation"):
-        for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
-            st.session_state.pop(key, None)
-        st.rerun()
-
     st.markdown("### Questions suggérées")
     for index, suggested_question in enumerate(SUGGESTED_QUESTIONS):
         if st.button(suggested_question, key=f"sidebar_suggested_question_{index}"):
