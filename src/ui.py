@@ -234,15 +234,13 @@ def render_sidebar(config, inventory: dict, database_coverage: dict) -> str:
         st.code(config.file_search_store)
 
         st.markdown("### Inventaire")
-        if inventory:
-            st.success(f"{len(inventory)} document(s) chargés depuis l'inventaire")
-        else:
+        if not inventory:
             st.warning("Inventaire non trouvé ou vide")
 
         indexed = database_coverage.get("indexed_documents", 0)
         total = database_coverage.get("total_documents", 0)
         if total:
-            st.info(f"{indexed} document(s) indexé(s) sur {total} dans l'inventaire")
+            st.success(f"{indexed} document(s) indexé(s) sur {total} dans l'inventaire")
 
         st.markdown("### Conseils")
         st.write("Pose une question précise : thème, période, type de document, recommandation, position ou comparaison.")
