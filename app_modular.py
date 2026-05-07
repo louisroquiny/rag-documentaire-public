@@ -63,7 +63,6 @@ def build_user_constraints() -> str:
     document_type = st.session_state.get("rag_document_type", "Tous")
     year = st.session_state.get("rag_year", "Toutes")
     theme = st.session_state.get("rag_theme", "Tous")
-    response_format = st.session_state.get("response_format", "Synthèse rapide")
 
     if document_type != "Tous":
         constraints.append(f"- Type de document à privilégier : {document_type}.")
@@ -71,13 +70,6 @@ def build_user_constraints() -> str:
         constraints.append(f"- Année à privilégier : {year}.")
     if theme != "Tous":
         constraints.append(f"- Thème à privilégier : {theme}.")
-
-    if response_format == "Synthèse rapide":
-        constraints.append("- Format de réponse : synthèse courte, structurée et directement exploitable.")
-    elif response_format == "Réponse détaillée":
-        constraints.append("- Format de réponse : réponse détaillée, avec contexte, nuances et points d'attention.")
-    elif response_format == "Note documentaire":
-        constraints.append("- Format de réponse : note documentaire structurée avec résumé, éléments clés et sources utilisées.")
 
     return "\n".join(constraints)
 
@@ -206,13 +198,7 @@ with chat_tab:
     themes = ["Tous"] + distinct_values(indexed_rows, "theme")
 
     st.markdown("### Cadrer la prochaine question")
-    col_format, col_type, col_year, col_theme = st.columns(4)
-    with col_format:
-        st.selectbox(
-            "Format",
-            ["Synthèse rapide", "Réponse détaillée", "Note documentaire"],
-            key="response_format",
-        )
+    col_type, col_year, col_theme = st.columns(3)
     with col_type:
         st.selectbox("Type", document_types, key="rag_document_type")
     with col_year:
