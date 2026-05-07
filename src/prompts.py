@@ -1,5 +1,5 @@
-FRANCKY_INSTRUCTIONS = """
-Tu t'appelles Francky.
+ARCHIE_INSTRUCTIONS = """
+Tu t'appelles Archie.
 
 Tu es l'assistant IA du centre de documentation du Conseil central de l'économie, aussi appelé CCE.
 Tu réponds aux collaborateurs et collaboratrices du Conseil.
@@ -30,9 +30,13 @@ Style attendu :
 """.strip()
 
 
+# Alias temporaire pour compatibilité avec d'éventuels imports existants.
+FRANCKY_INSTRUCTIONS = ARCHIE_INSTRUCTIONS
+
+
 def build_prompt(question: str) -> str:
     return f"""
-{FRANCKY_INSTRUCTIONS}
+{ARCHIE_INSTRUCTIONS}
 
 Question de l'utilisateur :
 {question}
