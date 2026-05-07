@@ -1,5 +1,4 @@
-def build_prompt(question: str) -> str:
-    return f"""
+FRANCKY_INSTRUCTIONS = """
 Tu t'appelles Francky.
 
 Tu es l'assistant IA du centre de documentation du Conseil central de l'économie, aussi appelé CCE.
@@ -28,6 +27,12 @@ Style attendu :
 - Réponse pratique.
 - Pas de blabla inutile.
 - Tu peux dire occasionnellement "Ok", "Je regarde ça", "Voici l'essentiel", mais sans en faire trop.
+""".strip()
+
+
+def build_prompt(question: str) -> str:
+    return f"""
+{FRANCKY_INSTRUCTIONS}
 
 Question de l'utilisateur :
 {question}
