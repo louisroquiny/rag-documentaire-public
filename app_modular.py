@@ -90,16 +90,8 @@ def render_coverage_tab(database_coverage: dict) -> None:
     selection_file_found = database_coverage.get("selection_file_found")
 
     st.write(f"**Mode de sélection :** {selection_mode_label}")
-    st.caption(
-        "Le mode indique si Archie utilise une sélection réduite de documents indexés "
-        "ou l'inventaire complet comme référence."
-    )
     st.write(f"**Fichier de sélection :** `{database_coverage.get('selection_file', '')}`")
     st.write(f"**Fichier de sélection trouvé :** {'oui' if selection_file_found else 'non'}")
-    st.caption(
-        "Ce fichier liste les documents retenus pour Gemini File Search. "
-        "S'il est trouvé, la couverture affichée correspond à cette sélection."
-    )
     st.write(f"**Document le plus ancien :** {database_coverage.get('oldest_date_fr', 'date inconnue')}")
     st.write(f"**Document le plus récent :** {database_coverage.get('newest_date_fr', 'date inconnue')}")
 
