@@ -85,9 +85,21 @@ def render_coverage_tab(database_coverage: dict) -> None:
     )
 
     st.info(database_coverage_sentence(database_coverage))
-    st.write(f"**Mode de sélection :** `{database_coverage.get('selection_mode', '')}`")
+    selection_mode = database_coverage.get("selection_mode", "")
+    selection_mode_label = "Sélection limitée" if selection_mode == "selection" else "Inventaire complet"
+    selection_file_found = database_coverage.get("selection_file_found")
+
+    st.write(f"**Mode de sélection :** {selection_mode_label}")
+    st.caption(
+        "Le mode indique si Archie utilise une sélection réduite de documents indexés "
+        "ou l'inventaire complet comme référence."
+    )
     st.write(f"**Fichier de sélection :** `{database_coverage.get('selection_file', '')}`")
-    st.write(f"**Fichier trouvé :** {'oui' if database_coverage.get('selection_file_found') else 'non'}")
+    st.write(f"**Fichier de sélection trouvé :** {'oui' if selection_file_found else 'non'}")
+    st.caption(
+        "Ce fichier liste les documents retenus pour Gemini File Search. "
+        "S'il est trouvé, la couverture affichée correspond à cette sélection."
+    )
     st.write(f"**Document le plus ancien :** {database_coverage.get('oldest_date_fr', 'date inconnue')}")
     st.write(f"**Document le plus récent :** {database_coverage.get('newest_date_fr', 'date inconnue')}")
 
@@ -122,12 +134,22 @@ model = render_sidebar(
     database_coverage=DATABASE_COVERAGE,
 )
 
+indexed_rows = DATABASE_COVERAGE.get("indexed_rows", [])
+document_types = ["Tous"] + distinct_values(indexed_rows, "document_type")
+years = ["Toutes"] + sorted(distinct_values(indexed_rows, "year"), reverse=True)
+themes = ["Tous"] + distinct_values(indexed_rows, "theme")
+
 with st.sidebar:
     st.markdown("### Conversation")
     if st.button("Nouvelle conversation"):
         for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
             st.session_state.pop(key, None)
         st.rerun()
+
+    st.markdown("#### Cadrer la prochaine question")
+    st.selectbox("Type", document_types, key="rag_document_type")
+    st.selectbox("Année", years, key="rag_year")
+    st.selectbox("Thème", themes, key="rag_theme")
 
     st.markdown("### Questions suggérées")
     for index, suggested_question in enumerate(SUGGESTED_QUESTIONS):
@@ -153,20 +175,6 @@ chat_tab, catalogue_tab, coverage_tab, limits_tab, instructions_tab = st.tabs(
 )
 
 with chat_tab:
-    indexed_rows = DATABASE_COVERAGE.get("indexed_rows", [])
-    document_types = ["Tous"] + distinct_values(indexed_rows, "document_type")
-    years = ["Toutes"] + sorted(distinct_values(indexed_rows, "year"), reverse=True)
-    themes = ["Tous"] + distinct_values(indexed_rows, "theme")
-
-    st.markdown("### Cadrer la prochaine question")
-    col_type, col_year, col_theme = st.columns(3)
-    with col_type:
-        st.selectbox("Type", document_types, key="rag_document_type")
-    with col_year:
-        st.selectbox("Année", years, key="rag_year")
-    with col_theme:
-        st.selectbox("Thème", themes, key="rag_theme")
-
     st.markdown("### Conversation")
 
     for message in st.session_state.messages:
