@@ -3,6 +3,7 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
+from src.local_api_client import LocalSearchApiUnavailable, search_local_api
 from src.local_retrieval import (
     LocalRetrievalUnavailable,
     hits_to_context,
@@ -107,14 +108,7 @@ def generate_with_gemini_file_search(question: str, model: str) -> tuple[str, li
     return answer, linked_documents, source_titles
 
 
-def generate_with_local_retrieval(question: str, model: str) -> tuple[str, list[dict], list[str]]:
-    hits = search_local(
-        question=question,
-        document_type=st.session_state.get("rag_document_type", "Tous"),
-        year=st.session_state.get("rag_year", "Toutes"),
-        theme=st.session_state.get("rag_theme", "Tous"),
-        top_k=8,
-    )
+def generate_from_hits(question: str, model: str, hits: list[dict]) -> tuple[str, list[dict], list[str]]:
     context = hits_to_context(hits)
     linked_documents = hits_to_linked_documents(hits)
     response = client.models.generate_content(
@@ -129,6 +123,28 @@ def generate_with_local_retrieval(question: str, model: str) -> tuple[str, list[
     answer = response.text or "Aucune réponse générée."
     source_titles = [doc.get("title") or doc.get("path") for doc in linked_documents if doc.get("title") or doc.get("path")]
     return answer, linked_documents, source_titles
+
+
+def generate_with_local_retrieval(question: str, model: str) -> tuple[str, list[dict], list[str]]:
+    hits = search_local(
+        question=question,
+        document_type=st.session_state.get("rag_document_type", "Tous"),
+        year=st.session_state.get("rag_year", "Toutes"),
+        theme=st.session_state.get("rag_theme", "Tous"),
+        top_k=8,
+    )
+    return generate_from_hits(question, model, hits)
+
+
+def generate_with_local_api(question: str, model: str) -> tuple[str, list[dict], list[str]]:
+    hits = search_local_api(
+        question=question,
+        document_type=st.session_state.get("rag_document_type", "Tous"),
+        year=st.session_state.get("rag_year", "Toutes"),
+        theme=st.session_state.get("rag_theme", "Tous"),
+        top_k=8,
+    )
+    return generate_from_hits(question, model, hits)
 
 
 def render_coverage_tab(database_coverage: dict) -> None:
@@ -156,14 +172,15 @@ def render_coverage_tab(database_coverage: dict) -> None:
 def render_limits_tab() -> None:
     st.markdown("### Limites d'Hector")
     st.info(
-        "Hector peut utiliser soit Gemini File Search, soit un index vectoriel local. "
-        "Dans les deux cas, il ne répond qu'à partir des documents disponibles pour le moteur choisi."
+        "Hector peut utiliser Gemini File Search, un index vectoriel local direct, ou une API locale. "
+        "Dans tous les cas, il ne répond qu'à partir des documents disponibles pour le moteur choisi."
     )
     st.markdown(
         """
 - En mode Gemini File Search, Hector dépend des quotas et des métadonnées retournées par Gemini.
-- En mode Recherche locale, Hector dépend de l'index `chroma_db/` construit localement.
-- Si l'index local n'existe pas ou si les dépendances locales ne sont pas installées, il faut utiliser Gemini File Search ou construire l'index.
+- En mode Recherche locale directe, Hector dépend de l'index `chroma_db/` présent sur la même machine que Streamlit.
+- En mode API locale, Hector interroge une API interne qui accède à `chroma_db/` côté serveur.
+- Si l'index local n'existe pas ou si les dépendances locales ne sont pas installées, il faut utiliser Gemini File Search, construire l'index, ou configurer l'API locale.
 - Les liens affichés viennent de l'inventaire local et des métadonnées disponibles.
 - Une réponse d'Hector doit rester une aide documentaire : elle ne remplace pas une validation juridique, institutionnelle ou éditoriale.
 """
@@ -197,9 +214,9 @@ with st.sidebar:
 
     search_engine = st.selectbox(
         "Moteur documentaire",
-        ["Recherche locale", "Gemini File Search"],
+        ["API locale", "Recherche locale directe", "Gemini File Search"],
         index=0,
-        help="Recherche locale évite le quota d'embedding Gemini. Gemini File Search garde l'ancien comportement.",
+        help="API locale interroge le serveur interne. Recherche locale directe lit chroma_db sur la même machine. Gemini File Search garde l'ancien comportement.",
     )
 
     st.markdown("#### Cadrer la prochaine question")
@@ -253,7 +270,9 @@ with chat_tab:
         with st.chat_message("assistant"):
             with st.spinner("Hector fouille les documents..."):
                 try:
-                    if search_engine == "Recherche locale":
+                    if search_engine == "API locale":
+                        answer, linked_documents, source_titles = generate_with_local_api(question, model)
+                    elif search_engine == "Recherche locale directe":
                         answer, linked_documents, source_titles = generate_with_local_retrieval(question, model)
                     else:
                         answer, linked_documents, source_titles = generate_with_gemini_file_search(question, model)
@@ -277,10 +296,15 @@ with chat_tab:
                         }
                     )
 
-                except LocalRetrievalUnavailable as e:
-                    error_message = f"Recherche locale indisponible : {e}"
+                except LocalSearchApiUnavailable as e:
+                    error_message = f"API locale indisponible : {e}"
                     st.warning(error_message)
-                    st.info("Passe temporairement le moteur documentaire sur Gemini File Search, ou construis l'index local.")
+                    st.info("Vérifie LOCAL_SEARCH_API_URL / LOCAL_SEARCH_API_TOKEN, ou passe temporairement sur Recherche locale directe ou Gemini File Search.")
+                    st.session_state.messages.append({"role": "assistant", "content": error_message})
+                except LocalRetrievalUnavailable as e:
+                    error_message = f"Recherche locale directe indisponible : {e}"
+                    st.warning(error_message)
+                    st.info("Passe temporairement le moteur documentaire sur API locale ou Gemini File Search, ou construis l'index local.")
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
                 except Exception as e:
                     error_message = f"Erreur pendant la génération : {e}"
