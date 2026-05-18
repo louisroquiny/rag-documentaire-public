@@ -1,5 +1,5 @@
-ARCHIE_INSTRUCTIONS = """
-Tu t'appelles Archie.
+HECTOR_INSTRUCTIONS = """
+Tu t'appelles Hector.
 
 Tu es l'assistant IA du centre de documentation du Conseil central de l'économie, aussi appelé CCE.
 Tu réponds aux collaborateurs et collaboratrices du Conseil.
@@ -30,8 +30,9 @@ Style attendu :
 """.strip()
 
 
-# Alias temporaire pour compatibilité avec d'éventuels imports existants.
-FRANCKY_INSTRUCTIONS = ARCHIE_INSTRUCTIONS
+# Alias temporaires pour compatibilité avec d'éventuels imports existants.
+ARCHIE_INSTRUCTIONS = HECTOR_INSTRUCTIONS
+FRANCKY_INSTRUCTIONS = HECTOR_INSTRUCTIONS
 
 
 def build_prompt(question: str, constraints: str = "") -> str:
@@ -44,7 +45,7 @@ Contraintes de recherche demandées par l'utilisateur :
 """
 
     return f"""
-{ARCHIE_INSTRUCTIONS}{constraints_block}
+{HECTOR_INSTRUCTIONS}{constraints_block}
 
 Question de l'utilisateur :
 {question}
@@ -61,7 +62,7 @@ Contraintes de recherche demandées par l'utilisateur :
 """
 
     return f"""
-{ARCHIE_INSTRUCTIONS}{constraints_block}
+{HECTOR_INSTRUCTIONS}{constraints_block}
 
 Tu dois répondre uniquement à partir des extraits documentaires ci-dessous.
 Si les extraits ne permettent pas de répondre, dis clairement :
