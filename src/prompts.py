@@ -49,3 +49,27 @@ Contraintes de recherche demandées par l'utilisateur :
 Question de l'utilisateur :
 {question}
 """
+
+
+def build_prompt_with_local_context(question: str, context: str, constraints: str = "") -> str:
+    constraints_block = ""
+    if constraints.strip():
+        constraints_block = f"""
+
+Contraintes de recherche demandées par l'utilisateur :
+{constraints.strip()}
+"""
+
+    return f"""
+{ARCHIE_INSTRUCTIONS}{constraints_block}
+
+Tu dois répondre uniquement à partir des extraits documentaires ci-dessous.
+Si les extraits ne permettent pas de répondre, dis clairement :
+"Je ne trouve pas cette information dans les documents indexés."
+
+Extraits documentaires :
+{context}
+
+Question de l'utilisateur :
+{question}
+"""
