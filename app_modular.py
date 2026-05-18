@@ -9,7 +9,7 @@ from src.local_retrieval import (
     hits_to_linked_documents,
     search_local,
 )
-from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt, build_prompt_with_local_context
+from src.prompts import HECTOR_INSTRUCTIONS, build_prompt, build_prompt_with_local_context
 from src.source_linking import build_linked_documents, extract_used_source_titles
 from src.ui import (
     display_linked_documents,
@@ -32,7 +32,7 @@ SUGGESTED_QUESTIONS = [
 
 
 st.set_page_config(
-    page_title="Archie - Assistant documentaire",
+    page_title="Hector - Assistant documentaire",
     page_icon="📚",
     layout="wide",
 )
@@ -154,23 +154,23 @@ def render_coverage_tab(database_coverage: dict) -> None:
 
 
 def render_limits_tab() -> None:
-    st.markdown("### Limites d'Archie")
+    st.markdown("### Limites d'Hector")
     st.info(
-        "Archie peut utiliser soit Gemini File Search, soit un index vectoriel local. "
+        "Hector peut utiliser soit Gemini File Search, soit un index vectoriel local. "
         "Dans les deux cas, il ne répond qu'à partir des documents disponibles pour le moteur choisi."
     )
     st.markdown(
         """
-- En mode Gemini File Search, Archie dépend des quotas et des métadonnées retournées par Gemini.
-- En mode Recherche locale, Archie dépend de l'index `chroma_db/` construit localement.
+- En mode Gemini File Search, Hector dépend des quotas et des métadonnées retournées par Gemini.
+- En mode Recherche locale, Hector dépend de l'index `chroma_db/` construit localement.
 - Si l'index local n'existe pas ou si les dépendances locales ne sont pas installées, il faut utiliser Gemini File Search ou construire l'index.
 - Les liens affichés viennent de l'inventaire local et des métadonnées disponibles.
-- Une réponse d'Archie doit rester une aide documentaire : elle ne remplace pas une validation juridique, institutionnelle ou éditoriale.
+- Une réponse d'Hector doit rester une aide documentaire : elle ne remplace pas une validation juridique, institutionnelle ou éditoriale.
 """
     )
 
 
-st.title("📚 Archie")
+st.title("📚 Hector")
 st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, "
     "et branché sur les documents publics indexés."
@@ -222,11 +222,11 @@ question = pending_question or chat_question
 
 chat_tab, catalogue_tab, coverage_tab, limits_tab, instructions_tab = st.tabs(
     [
-        "Questionner Archie",
+        "Questionner Hector",
         "Catalogue",
         "Couverture",
         "Limites",
-        "Instructions d'Archie",
+        "Instructions d'Hector",
     ]
 )
 
@@ -251,7 +251,7 @@ with chat_tab:
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Archie fouille les documents..."):
+            with st.spinner("Hector fouille les documents..."):
                 try:
                     if search_engine == "Recherche locale":
                         answer, linked_documents, source_titles = generate_with_local_retrieval(question, model)
@@ -297,4 +297,4 @@ with limits_tab:
     render_limits_tab()
 
 with instructions_tab:
-    render_instructions(ARCHIE_INSTRUCTIONS, assistant_name="Archie")
+    render_instructions(HECTOR_INSTRUCTIONS, assistant_name="Hector")
