@@ -1,6 +1,6 @@
 # RAG documentaire public
 
-Application Streamlit permettant d'interroger des documents publics via Archie, l'assistant documentaire du CCE.
+Application Streamlit permettant d'interroger des documents publics via Hector, l'assistant documentaire hybride du CCE.
 
 La branche `feature/local-embeddings-hybrid` ajoute un mode hybride :
 
@@ -88,7 +88,7 @@ python scripts/build_local_index.py --data-dir data --inventory inventaire.json 
 
 Le dossier `chroma_db/` est ignoré par Git. Il doit être recréé ou copié sur la machine qui exécute le moteur local.
 
-## 4. Lancer Archie en mode hybride
+## 4. Lancer Hector en mode hybride
 
 ```bash
 python -m streamlit run app_modular.py
@@ -110,7 +110,7 @@ Question utilisateur
 → recherche dans chroma_db/
 → récupération des meilleurs extraits
 → envoi des extraits à Gemini
-→ réponse finale d'Archie
+→ réponse finale d'Hector
 ```
 
 Ce mode évite le quota d'embedding Gemini File Search, car l'embedding de recherche est fait localement.
@@ -153,13 +153,13 @@ Ne pas installer `requirements-local.txt` sur Streamlit Cloud, et choisir dans l
 Moteur documentaire : Gemini File Search
 ```
 
-### Option B — héberger Archie en interne
+### Option B — héberger Hector en interne
 
 Recommandé pour le mode local :
 
 ```text
 Utilisateur connecté au VPN
-→ Archie hébergé sur serveur interne
+→ Hector hébergé sur serveur interne
 → chroma_db/ local ou partagé
 → Gemini utilisé seulement pour générer la réponse
 ```
