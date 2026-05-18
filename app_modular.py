@@ -3,7 +3,13 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
-from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt
+from src.local_retrieval import (
+    LocalRetrievalUnavailable,
+    hits_to_context,
+    hits_to_linked_documents,
+    search_local,
+)
+from src.prompts import ARCHIE_INSTRUCTIONS, build_prompt, build_prompt_with_local_context
 from src.source_linking import build_linked_documents, extract_used_source_titles
 from src.ui import (
     display_linked_documents,
@@ -74,6 +80,57 @@ def build_user_constraints() -> str:
     return "\n".join(constraints)
 
 
+def generate_with_gemini_file_search(question: str, model: str) -> tuple[str, list[dict], list[str]]:
+    response = client.models.generate_content(
+        model=model,
+        contents=build_prompt(question, constraints=build_user_constraints()),
+        config=types.GenerateContentConfig(
+            temperature=DEFAULT_TEMPERATURE,
+            tools=[
+                types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=[config.file_search_store]
+                    )
+                )
+            ],
+        ),
+    )
+
+    answer = response.text or "Aucune réponse générée."
+    linked_documents = build_linked_documents(
+        response,
+        answer_text=answer,
+        inventory=INVENTORY,
+        inventory_by_path=INVENTORY_BY_PATH,
+    )
+    source_titles = extract_used_source_titles(response)
+    return answer, linked_documents, source_titles
+
+
+def generate_with_local_retrieval(question: str, model: str) -> tuple[str, list[dict], list[str]]:
+    hits = search_local(
+        question=question,
+        document_type=st.session_state.get("rag_document_type", "Tous"),
+        year=st.session_state.get("rag_year", "Toutes"),
+        theme=st.session_state.get("rag_theme", "Tous"),
+        top_k=8,
+    )
+    context = hits_to_context(hits)
+    linked_documents = hits_to_linked_documents(hits)
+    response = client.models.generate_content(
+        model=model,
+        contents=build_prompt_with_local_context(
+            question=question,
+            context=context,
+            constraints=build_user_constraints(),
+        ),
+        config=types.GenerateContentConfig(temperature=DEFAULT_TEMPERATURE),
+    )
+    answer = response.text or "Aucune réponse générée."
+    source_titles = [doc.get("title") or doc.get("path") for doc in linked_documents if doc.get("title") or doc.get("path")]
+    return answer, linked_documents, source_titles
+
+
 def render_coverage_tab(database_coverage: dict) -> None:
     st.markdown("### Couverture de la base")
     col1, col2, col3 = st.columns(3)
@@ -99,16 +156,16 @@ def render_coverage_tab(database_coverage: dict) -> None:
 def render_limits_tab() -> None:
     st.markdown("### Limites d'Archie")
     st.info(
-        "Archie ne consulte que les documents indexés dans la base Gemini File Search. "
-        "Il ne voit pas automatiquement tout l'inventaire complet."
+        "Archie peut utiliser soit Gemini File Search, soit un index vectoriel local. "
+        "Dans les deux cas, il ne répond qu'à partir des documents disponibles pour le moteur choisi."
     )
     st.markdown(
         """
-- Archie peut ne pas connaître certains documents non sélectionnés ou non indexés.
-- Archie répond à partir des documents retrouvés par File Search, pas à partir d'une recherche web générale.
+- En mode Gemini File Search, Archie dépend des quotas et des métadonnées retournées par Gemini.
+- En mode Recherche locale, Archie dépend de l'index `chroma_db/` construit localement.
+- Si l'index local n'existe pas ou si les dépendances locales ne sont pas installées, il faut utiliser Gemini File Search ou construire l'index.
 - Les liens affichés viennent de l'inventaire local et des métadonnées disponibles.
 - Une réponse d'Archie doit rester une aide documentaire : elle ne remplace pas une validation juridique, institutionnelle ou éditoriale.
-- Les réponses peuvent varier légèrement selon le modèle choisi et les documents retrouvés.
 """
     )
 
@@ -137,6 +194,13 @@ with st.sidebar:
         for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
             st.session_state.pop(key, None)
         st.rerun()
+
+    search_engine = st.selectbox(
+        "Moteur documentaire",
+        ["Recherche locale", "Gemini File Search"],
+        index=0,
+        help="Recherche locale évite le quota d'embedding Gemini. Gemini File Search garde l'ancien comportement.",
+    )
 
     st.markdown("#### Cadrer la prochaine question")
     st.selectbox("Type", document_types, key="rag_document_type")
@@ -189,35 +253,15 @@ with chat_tab:
         with st.chat_message("assistant"):
             with st.spinner("Archie fouille les documents..."):
                 try:
-                    response = client.models.generate_content(
-                        model=model,
-                        contents=build_prompt(question, constraints=build_user_constraints()),
-                        config=types.GenerateContentConfig(
-                            temperature=DEFAULT_TEMPERATURE,
-                            tools=[
-                                types.Tool(
-                                    file_search=types.FileSearch(
-                                        file_search_store_names=[config.file_search_store]
-                                    )
-                                )
-                            ],
-                        ),
-                    )
+                    if search_engine == "Recherche locale":
+                        answer, linked_documents, source_titles = generate_with_local_retrieval(question, model)
+                    else:
+                        answer, linked_documents, source_titles = generate_with_gemini_file_search(question, model)
 
-                    answer = response.text or "Aucune réponse générée."
                     st.markdown(answer)
-
-                    linked_documents = build_linked_documents(
-                        response,
-                        answer_text=answer,
-                        inventory=INVENTORY,
-                        inventory_by_path=INVENTORY_BY_PATH,
-                    )
                     display_linked_documents(linked_documents)
 
                     with st.expander("Sources techniques détectées"):
-                        source_titles = extract_used_source_titles(response)
-
                         if source_titles:
                             for title in source_titles:
                                 st.write("-", title)
@@ -233,6 +277,11 @@ with chat_tab:
                         }
                     )
 
+                except LocalRetrievalUnavailable as e:
+                    error_message = f"Recherche locale indisponible : {e}"
+                    st.warning(error_message)
+                    st.info("Passe temporairement le moteur documentaire sur Gemini File Search, ou construis l'index local.")
+                    st.session_state.messages.append({"role": "assistant", "content": error_message})
                 except Exception as e:
                     error_message = f"Erreur pendant la génération : {e}"
                     st.error(error_message)
