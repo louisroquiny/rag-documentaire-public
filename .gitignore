@@ -18,6 +18,10 @@ data_raw/
 store_name.txt
 sample.html
 
+# Index vectoriel local
+chroma_db/
+*.sqlite3
+*.parquet
 
 # Fichiers système
 .DS_Store
