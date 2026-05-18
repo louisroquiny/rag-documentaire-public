@@ -1,0 +1,7 @@
+# Dépendances nécessaires uniquement pour le moteur de recherche locale.
+# À installer sur la machine qui construit ou utilise l'index local :
+# python -m pip install -r requirements-local.txt
+
+chromadb
+sentence-transformers
+pypdf
