@@ -5,6 +5,7 @@ Application Streamlit permettant d'interroger des documents publics via Hector, 
 La branche `feature/local-embeddings-hybrid` ajoute un mode hybride :
 
 - recherche documentaire et embeddings en local avec Chroma + SentenceTransformers ;
+- recherche locale directe ou via API interne ;
 - génération finale avec Gemini ;
 - ancien mode Gemini File Search conservé en secours.
 
@@ -15,7 +16,7 @@ python -m pip install -r requirements.txt
 python -m streamlit run app_modular.py
 ```
 
-Pour utiliser le moteur local, il faut aussi installer les dépendances locales et construire l'index.
+Pour utiliser le moteur local ou l'API locale, il faut aussi installer les dépendances locales et construire l'index.
 
 ## 1. Installer les dépendances locales
 
@@ -29,7 +30,8 @@ Ce fichier installe notamment :
 
 - `chromadb` pour la base vectorielle locale ;
 - `sentence-transformers` pour les embeddings locaux ;
-- `pypdf` pour extraire le texte des PDF.
+- `pypdf` pour extraire le texte des PDF ;
+- `fastapi` et `uvicorn` pour exposer l'index local via API.
 
 ## 2. Préparer les données
 
@@ -88,7 +90,74 @@ python scripts/build_local_index.py --data-dir data --inventory inventaire.json 
 
 Le dossier `chroma_db/` est ignoré par Git. Il doit être recréé ou copié sur la machine qui exécute le moteur local.
 
-## 4. Lancer Hector en mode hybride
+## 4. Lancer l'API locale de recherche
+
+Sur le serveur où se trouvent `chroma_db/`, `data/` et `inventaire.json` :
+
+```bash
+python -m uvicorn api_local_search:app --host 0.0.0.0 --port 8000
+```
+
+Test santé :
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Réponse attendue :
+
+```json
+{"status":"ok"}
+```
+
+### Sécuriser avec un token
+
+Définir une variable d'environnement sur le serveur API :
+
+```bash
+export LOCAL_SEARCH_API_TOKEN="un_token_secret"
+```
+
+Sous PowerShell :
+
+```powershell
+$env:LOCAL_SEARCH_API_TOKEN="un_token_secret"
+```
+
+Puis lancer l'API dans le même terminal.
+
+Si `LOCAL_SEARCH_API_TOKEN` est défini côté API, les appels doivent fournir le header :
+
+```text
+X-API-Token: un_token_secret
+```
+
+Exemple de test :
+
+```bash
+curl -X POST http://127.0.0.1:8000/search \
+  -H "Content-Type: application/json" \
+  -H "X-API-Token: un_token_secret" \
+  -d '{"question":"Quels documents parlent de mobilité durable ?","top_k":5}'
+```
+
+## 5. Connecter l'app Streamlit à l'API
+
+Configurer l'app Streamlit avec :
+
+```bash
+export LOCAL_SEARCH_API_URL="http://IP_DU_SERVEUR:8000/search"
+export LOCAL_SEARCH_API_TOKEN="un_token_secret"
+```
+
+Sous PowerShell :
+
+```powershell
+$env:LOCAL_SEARCH_API_URL="http://IP_DU_SERVEUR:8000/search"
+$env:LOCAL_SEARCH_API_TOKEN="un_token_secret"
+```
+
+Puis lancer :
 
 ```bash
 python -m streamlit run app_modular.py
@@ -97,7 +166,7 @@ python -m streamlit run app_modular.py
 Dans la sidebar, choisir :
 
 ```text
-Moteur documentaire : Recherche locale
+Moteur documentaire : API locale
 ```
 
 C'est le mode par défaut sur cette branche.
@@ -106,24 +175,35 @@ Le fonctionnement devient :
 
 ```text
 Question utilisateur
-→ embedding local de la question
-→ recherche dans chroma_db/
-→ récupération des meilleurs extraits
+→ app Streamlit Hector
+→ POST vers l'API locale /search
+→ recherche dans chroma_db/ côté serveur
+→ retour des meilleurs extraits et métadonnées
 → envoi des extraits à Gemini
 → réponse finale d'Hector
 ```
 
-Ce mode évite le quota d'embedding Gemini File Search, car l'embedding de recherche est fait localement.
+## 6. Autres moteurs documentaires
 
-## 5. Mode de secours Gemini File Search
-
-Dans la sidebar, il est possible de choisir :
+Dans la sidebar, trois modes sont disponibles :
 
 ```text
-Moteur documentaire : Gemini File Search
+API locale
+Recherche locale directe
+Gemini File Search
 ```
 
-Ce mode garde l'ancien comportement :
+### API locale
+
+Recommandé si l'index `chroma_db/` est sur un serveur interne et que l'app Streamlit doit y accéder via HTTP.
+
+### Recherche locale directe
+
+À utiliser si Streamlit tourne sur la même machine que `chroma_db/`.
+
+### Gemini File Search
+
+Garde l'ancien comportement :
 
 ```text
 Question utilisateur
@@ -134,44 +214,49 @@ Question utilisateur
 
 À utiliser si :
 
+- l'API locale n'est pas disponible ;
 - l'index local n'est pas encore construit ;
 - `chroma_db/` est absent ;
 - les dépendances locales ne sont pas installées ;
 - tu veux comparer les résultats local vs Gemini File Search.
 
-## 6. Déploiement Streamlit Cloud
+## 7. Déploiement Streamlit Cloud
 
-Attention : Streamlit Cloud n'a pas automatiquement accès à ton dossier local `data/` ni à `chroma_db/`.
+Attention : Streamlit Cloud n'a pas automatiquement accès à ton VPN ni à ton serveur interne.
 
-Pour Streamlit Cloud, deux options :
-
-### Option A — continuer avec Gemini File Search
-
-Ne pas installer `requirements-local.txt` sur Streamlit Cloud, et choisir dans l'interface :
+Pour utiliser `API locale` depuis Streamlit Cloud, il faut que l'API soit accessible depuis Streamlit Cloud, par exemple via :
 
 ```text
-Moteur documentaire : Gemini File Search
+https://api-hector.ccecrb.fgov.be/search
 ```
 
-### Option B — héberger Hector en interne
+avec :
 
-Recommandé pour le mode local :
+```text
+HTTPS
+Token API
+Accès réseau autorisé par l'IT
+```
+
+Si l'API reste accessible uniquement via VPN, alors il vaut mieux héberger Streamlit aussi en interne.
+
+Architecture recommandée :
 
 ```text
 Utilisateur connecté au VPN
 → Hector hébergé sur serveur interne
-→ chroma_db/ local ou partagé
+→ API locale ou chroma_db/ local
 → Gemini utilisé seulement pour générer la réponse
 ```
 
-C'est l'option la plus propre si la recherche locale doit accéder à des données internes ou à un index construit sur serveur.
-
-## 7. Fichiers ajoutés
+## 8. Fichiers ajoutés
 
 ```text
 requirements-local.txt
 scripts/build_local_index.py
 src/local_retrieval.py
+src/local_api_client.py
+api_local_search.py
 ```
 
 Fichiers modifiés :
@@ -183,9 +268,32 @@ src/prompts.py
 README.md
 ```
 
-## 8. Dépannage
+## 9. Dépannage
 
-### Erreur : Recherche locale indisponible
+### Erreur : API locale indisponible
+
+Causes probables :
+
+- `LOCAL_SEARCH_API_URL` non configuré ;
+- API non démarrée ;
+- port bloqué par firewall/VPN ;
+- token incorrect ;
+- URL doit finir par `/search`.
+
+Vérifier :
+
+```bash
+curl http://IP_DU_SERVEUR:8000/health
+```
+
+Puis configurer :
+
+```bash
+export LOCAL_SEARCH_API_URL="http://IP_DU_SERVEUR:8000/search"
+export LOCAL_SEARCH_API_TOKEN="un_token_secret"
+```
+
+### Erreur : Recherche locale directe indisponible
 
 Causes probables :
 
@@ -208,14 +316,20 @@ Cette erreur vient du quota Gemini, souvent sur File Search ou embeddings côté
 Solution : utiliser le moteur :
 
 ```text
-Recherche locale
+API locale
+```
+
+ou :
+
+```text
+Recherche locale directe
 ```
 
 Ainsi, l'embedding de recherche est fait localement.
 
 ### Les documents cités ne s'affichent pas
 
-En mode Recherche locale, les documents cités viennent directement des métadonnées stockées dans Chroma.
+En mode API locale ou Recherche locale directe, les documents cités viennent directement des métadonnées stockées dans Chroma.
 
 Vérifier que `inventaire.json` contient bien :
 
@@ -235,7 +349,7 @@ Puis reconstruire :
 python scripts/build_local_index.py --reset
 ```
 
-## 9. Commandes Git utiles
+## 10. Commandes Git utiles
 
 ```bash
 git fetch origin
