@@ -4,6 +4,7 @@ from pathlib import Path
 CHROMA_DIR = Path("chroma_db")
 COLLECTION_NAME = "archie_documents"
 EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
+STATS_BATCH_SIZE = 500
 
 _model = None
 _collection = None
@@ -110,18 +111,26 @@ def _doc_key(meta: dict) -> str:
     )
 
 
+def _iter_collection_metadatas(collection, total_count: int):
+    for offset in range(0, total_count, STATS_BATCH_SIZE):
+        result = collection.get(
+            include=["metadatas"],
+            limit=STATS_BATCH_SIZE,
+            offset=offset,
+        )
+        for meta in result.get("metadatas", []) or []:
+            yield meta or {}
+
+
 def get_local_index_stats() -> dict:
     collection = get_collection()
     chunk_count = collection.count()
-    result = collection.get(include=["metadatas"])
-    metadatas = result.get("metadatas", []) or []
 
     documents = {}
     years = []
     dates = []
 
-    for meta in metadatas:
-        meta = meta or {}
+    for meta in _iter_collection_metadatas(collection, chunk_count):
         key = _doc_key(meta)
         if key:
             documents[key] = meta
