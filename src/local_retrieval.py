@@ -100,6 +100,54 @@ def search_local(
     return hits
 
 
+def _doc_key(meta: dict) -> str:
+    return (
+        meta.get("file_url")
+        or meta.get("post_url")
+        or meta.get("path")
+        or meta.get("title")
+        or ""
+    )
+
+
+def get_local_index_stats() -> dict:
+    collection = get_collection()
+    chunk_count = collection.count()
+    result = collection.get(include=["metadatas"])
+    metadatas = result.get("metadatas", []) or []
+
+    documents = {}
+    years = []
+    dates = []
+
+    for meta in metadatas:
+        meta = meta or {}
+        key = _doc_key(meta)
+        if key:
+            documents[key] = meta
+        year = str(meta.get("year", "") or "").strip()
+        date_iso = str(meta.get("date_iso", "") or "").strip()
+        date = str(meta.get("date", "") or "").strip()
+        if year.isdigit():
+            years.append(year)
+        if date_iso:
+            dates.append(date_iso)
+        elif date:
+            dates.append(date)
+
+    oldest = min(dates) if dates else (min(years) if years else "")
+    newest = max(dates) if dates else (max(years) if years else "")
+
+    return {
+        "engine": "chroma",
+        "collection": COLLECTION_NAME,
+        "chunk_count": chunk_count,
+        "indexed_documents": len(documents),
+        "oldest_document": oldest,
+        "newest_document": newest,
+    }
+
+
 def hits_to_context(hits: list[dict]) -> str:
     if not hits:
         return "Aucun extrait documentaire trouvé."
