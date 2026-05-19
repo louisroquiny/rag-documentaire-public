@@ -30,6 +30,41 @@ def get_api_settings() -> tuple[str, str]:
     return api_url, api_token
 
 
+def _headers(api_token: str) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if api_token:
+        headers["X-API-Token"] = api_token
+    return headers
+
+
+def _stats_url_from_search_url(api_url: str) -> str:
+    api_url = api_url.rstrip("/")
+    if api_url.endswith("/search"):
+        return api_url[: -len("/search")] + "/stats"
+    return api_url + "/stats"
+
+
+def get_local_api_stats() -> dict:
+    api_url, api_token = get_api_settings()
+
+    if not api_url:
+        raise LocalSearchApiUnavailable(
+            "LOCAL_SEARCH_API_URL n'est pas configuré. Renseigne l'URL de l'API de recherche locale."
+        )
+
+    try:
+        response = requests.get(
+            _stats_url_from_search_url(api_url),
+            headers=_headers(api_token),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        raise LocalSearchApiUnavailable(f"Erreur d'appel aux statistiques de l'API locale : {e}") from e
+
+    return response.json()
+
+
 def search_local_api(
     question: str,
     document_type: str = "Tous",
@@ -44,14 +79,10 @@ def search_local_api(
             "LOCAL_SEARCH_API_URL n'est pas configuré. Renseigne l'URL de l'API de recherche locale."
         )
 
-    headers = {"Content-Type": "application/json"}
-    if api_token:
-        headers["X-API-Token"] = api_token
-
     try:
         response = requests.post(
             api_url,
-            headers=headers,
+            headers=_headers(api_token),
             json={
                 "question": question,
                 "document_type": document_type,
