@@ -122,18 +122,52 @@ def _iter_collection_metadatas(collection, total_count: int):
             yield meta or {}
 
 
-def get_local_index_stats() -> dict:
+def _metadata_to_document_row(meta: dict) -> dict:
+    return {
+        "title": meta.get("title", "") or meta.get("path", "") or "Document",
+        "post_url": meta.get("post_url", ""),
+        "file_url": meta.get("file_url", ""),
+        "path": meta.get("path", ""),
+        "category": meta.get("category", ""),
+        "document_type": meta.get("document_type", ""),
+        "theme": meta.get("theme", ""),
+        "section": meta.get("section", ""),
+        "date": meta.get("date", ""),
+        "date_iso": meta.get("date_iso", ""),
+        "year": meta.get("year", ""),
+        "summary": meta.get("summary", ""),
+        "filename": meta.get("filename", ""),
+        "language": meta.get("language", ""),
+        "source_list_url": meta.get("source_list_url", ""),
+    }
+
+
+def get_local_index_documents() -> list[dict]:
     collection = get_collection()
     chunk_count = collection.count()
-
     documents = {}
-    years = []
-    dates = []
 
     for meta in _iter_collection_metadatas(collection, chunk_count):
         key = _doc_key(meta)
-        if key:
-            documents[key] = meta
+        if not key or key in documents:
+            continue
+        documents[key] = _metadata_to_document_row(meta)
+
+    return sorted(
+        documents.values(),
+        key=lambda row: row.get("date_iso") or row.get("date") or row.get("year") or "",
+        reverse=True,
+    )
+
+
+def get_local_index_stats() -> dict:
+    collection = get_collection()
+    chunk_count = collection.count()
+    documents = get_local_index_documents()
+    years = []
+    dates = []
+
+    for meta in documents:
         year = str(meta.get("year", "") or "").strip()
         date_iso = str(meta.get("date_iso", "") or "").strip()
         date = str(meta.get("date", "") or "").strip()
@@ -187,21 +221,5 @@ def hits_to_linked_documents(hits: list[dict]) -> list[dict]:
         if not key or key in seen:
             continue
         seen.add(key)
-        docs.append({
-            "title": meta.get("title") or meta.get("path") or "Document",
-            "post_url": meta.get("post_url", ""),
-            "file_url": meta.get("file_url", ""),
-            "path": meta.get("path", ""),
-            "category": meta.get("category", ""),
-            "document_type": meta.get("document_type", ""),
-            "theme": meta.get("theme", ""),
-            "section": meta.get("section", ""),
-            "date": meta.get("date", ""),
-            "date_iso": meta.get("date_iso", ""),
-            "year": meta.get("year", ""),
-            "summary": meta.get("summary", ""),
-            "filename": meta.get("filename", ""),
-            "language": meta.get("language", ""),
-            "source_list_url": meta.get("source_list_url", ""),
-        })
+        docs.append(_metadata_to_document_row(meta))
     return docs
