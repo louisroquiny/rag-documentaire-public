@@ -37,11 +37,13 @@ def _headers(api_token: str) -> dict:
     return headers
 
 
-def _stats_url_from_search_url(api_url: str) -> str:
+def _endpoint_url_from_search_url(api_url: str, endpoint: str) -> str:
     api_url = api_url.rstrip("/")
     if api_url.endswith("/search"):
-        return api_url[: -len("/search")] + "/stats"
-    return api_url + "/stats"
+        base_url = api_url[: -len("/search")]
+    else:
+        base_url = api_url
+    return f"{base_url}/{endpoint.lstrip('/')}"
 
 
 def get_local_api_stats() -> dict:
@@ -54,7 +56,7 @@ def get_local_api_stats() -> dict:
 
     try:
         response = requests.get(
-            _stats_url_from_search_url(api_url),
+            _endpoint_url_from_search_url(api_url, "stats"),
             headers=_headers(api_token),
             timeout=30,
         )
@@ -63,6 +65,28 @@ def get_local_api_stats() -> dict:
         raise LocalSearchApiUnavailable(f"Erreur d'appel aux statistiques de l'API locale : {e}") from e
 
     return response.json()
+
+
+def get_local_api_documents() -> list[dict]:
+    api_url, api_token = get_api_settings()
+
+    if not api_url:
+        raise LocalSearchApiUnavailable(
+            "LOCAL_SEARCH_API_URL n'est pas configuré. Renseigne l'URL de l'API de recherche locale."
+        )
+
+    try:
+        response = requests.get(
+            _endpoint_url_from_search_url(api_url, "documents"),
+            headers=_headers(api_token),
+            timeout=60,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        raise LocalSearchApiUnavailable(f"Erreur d'appel aux documents de l'API locale : {e}") from e
+
+    payload = response.json()
+    return payload.get("documents", [])
 
 
 def search_local_api(
