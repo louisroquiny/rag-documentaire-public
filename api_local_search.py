@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from src.local_retrieval import LocalRetrievalUnavailable, search_local
+from src.local_retrieval import LocalRetrievalUnavailable, get_local_index_stats, search_local
 
 
 API_TOKEN = os.getenv("LOCAL_SEARCH_API_TOKEN", "")
@@ -19,15 +19,28 @@ class SearchRequest(BaseModel):
     top_k: int = Field(default=8, ge=1, le=30)
 
 
+def check_token(x_api_token: str | None) -> None:
+    if API_TOKEN and x_api_token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid API token")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
+@app.get("/stats")
+def stats(x_api_token: str | None = Header(default=None)):
+    check_token(x_api_token)
+    try:
+        return get_local_index_stats()
+    except LocalRetrievalUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
 @app.post("/search")
 def search(request: SearchRequest, x_api_token: str | None = Header(default=None)):
-    if API_TOKEN and x_api_token != API_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid API token")
+    check_token(x_api_token)
 
     try:
         hits = search_local(
