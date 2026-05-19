@@ -3,9 +3,10 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
-from src.local_api_client import LocalSearchApiUnavailable, search_local_api
+from src.local_api_client import LocalSearchApiUnavailable, get_local_api_stats, search_local_api
 from src.local_retrieval import (
     LocalRetrievalUnavailable,
+    get_local_index_stats,
     hits_to_context,
     hits_to_linked_documents,
     search_local,
@@ -81,6 +82,40 @@ def build_user_constraints() -> str:
     return "\n".join(constraints)
 
 
+def get_active_coverage_message(search_engine: str) -> str:
+    if search_engine == "API locale":
+        try:
+            stats = get_local_api_stats()
+            indexed = stats.get("indexed_documents", 0)
+            chunks = stats.get("chunk_count", 0)
+            collection = stats.get("collection", "chroma")
+            oldest = stats.get("oldest_document") or "date inconnue"
+            return (
+                f"Base Chroma utilisée via API locale : {indexed} document(s) indexé(s), "
+                f"{chunks} extrait(s) vectorisé(s), collection `{collection}`. "
+                f"Les documents consultables remontent jusqu'au {oldest}."
+            )
+        except LocalSearchApiUnavailable as e:
+            return f"API locale configurée, mais statistiques Chroma indisponibles : {e}"
+
+    if search_engine == "Recherche locale directe":
+        try:
+            stats = get_local_index_stats()
+            indexed = stats.get("indexed_documents", 0)
+            chunks = stats.get("chunk_count", 0)
+            collection = stats.get("collection", "chroma")
+            oldest = stats.get("oldest_document") or "date inconnue"
+            return (
+                f"Base Chroma locale : {indexed} document(s) indexé(s), "
+                f"{chunks} extrait(s) vectorisé(s), collection `{collection}`. "
+                f"Les documents consultables remontent jusqu'au {oldest}."
+            )
+        except LocalRetrievalUnavailable as e:
+            return f"Recherche locale directe sélectionnée, mais statistiques Chroma indisponibles : {e}"
+
+    return database_coverage_sentence(DATABASE_COVERAGE)
+
+
 def generate_with_gemini_file_search(question: str, model: str) -> tuple[str, list[dict], list[str]]:
     response = client.models.generate_content(
         model=model,
@@ -147,8 +182,24 @@ def generate_with_local_api(question: str, model: str) -> tuple[str, list[dict],
     return generate_from_hits(question, model, hits)
 
 
-def render_coverage_tab(database_coverage: dict) -> None:
+def render_coverage_tab(database_coverage: dict, search_engine: str) -> None:
     st.markdown("### Couverture de la base")
+
+    if search_engine in ["API locale", "Recherche locale directe"]:
+        try:
+            stats = get_local_api_stats() if search_engine == "API locale" else get_local_index_stats()
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Documents Chroma", stats.get("indexed_documents", 0))
+            col2.metric("Extraits vectorisés", stats.get("chunk_count", 0))
+            col3.metric("Moteur", search_engine)
+            st.info(get_active_coverage_message(search_engine))
+            st.write(f"**Collection Chroma :** `{stats.get('collection', '')}`")
+            st.write(f"**Document le plus ancien :** {stats.get('oldest_document') or 'date inconnue'}")
+            st.write(f"**Document le plus récent :** {stats.get('newest_document') or 'date inconnue'}")
+            return
+        except (LocalSearchApiUnavailable, LocalRetrievalUnavailable) as e:
+            st.warning(f"Statistiques Chroma indisponibles : {e}")
+
     col1, col2, col3 = st.columns(3)
     col1.metric("Documents inventoriés", database_coverage.get("total_documents", 0))
     col2.metric("Documents indexés", database_coverage.get("indexed_documents", 0))
@@ -192,7 +243,6 @@ st.caption(
     "Assistant IA du centre de documentation. Un peu speed, très serviable, "
     "et branché sur les documents publics indexés."
 )
-render_coverage_box(database_coverage_sentence(DATABASE_COVERAGE))
 
 model = render_sidebar(
     config=config,
@@ -229,6 +279,8 @@ with st.sidebar:
         if st.button(suggested_question, key=f"sidebar_suggested_question_{index}"):
             st.session_state.pending_question = suggested_question
             st.rerun()
+
+render_coverage_box(get_active_coverage_message(search_engine))
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -277,6 +329,7 @@ with chat_tab:
                     else:
                         answer, linked_documents, source_titles = generate_with_gemini_file_search(question, model)
 
+                    st.caption(f"Moteur utilisé : {search_engine}")
                     st.markdown(answer)
                     display_linked_documents(linked_documents)
 
@@ -315,7 +368,7 @@ with catalogue_tab:
     render_catalogue(DATABASE_COVERAGE)
 
 with coverage_tab:
-    render_coverage_tab(DATABASE_COVERAGE)
+    render_coverage_tab(DATABASE_COVERAGE, search_engine)
 
 with limits_tab:
     render_limits_tab()
