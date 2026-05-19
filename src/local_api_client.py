@@ -7,9 +7,26 @@ class LocalSearchApiUnavailable(RuntimeError):
     pass
 
 
+def _get_streamlit_secret(name: str) -> str:
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(name, "")
+        return str(value).strip() if value else ""
+    except Exception:
+        return ""
+
+
 def get_api_settings() -> tuple[str, str]:
     api_url = os.getenv("LOCAL_SEARCH_API_URL", "").strip()
     api_token = os.getenv("LOCAL_SEARCH_API_TOKEN", "").strip()
+
+    if not api_url:
+        api_url = _get_streamlit_secret("LOCAL_SEARCH_API_URL")
+
+    if not api_token:
+        api_token = _get_streamlit_secret("LOCAL_SEARCH_API_TOKEN")
+
     return api_url, api_token
 
 
