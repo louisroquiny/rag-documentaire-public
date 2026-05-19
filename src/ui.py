@@ -258,7 +258,37 @@ def render_catalogue(database_coverage: dict) -> None:
             st.info("Affichage limité aux 200 premiers résultats. Affine les filtres pour voir moins de documents.")
 
 
-def render_sidebar(config, inventory: dict, database_coverage: dict) -> str:
+def _render_sidebar_coverage(database_coverage: dict, active_coverage: dict | None) -> None:
+    st.markdown("### Base documentaire")
+
+    if active_coverage and active_coverage.get("engine") == "api":
+        st.code(active_coverage.get("label", "API locale Chroma"))
+        indexed = active_coverage.get("indexed_documents", 0)
+        total = active_coverage.get("total_documents", indexed)
+        chunks = active_coverage.get("chunk_count", 0)
+        st.success(f"{indexed} document(s) indexé(s) sur {total} dans Chroma")
+        if chunks:
+            st.caption(f"{chunks} extrait(s) vectorisé(s)")
+        return
+
+    if active_coverage and active_coverage.get("engine") == "local":
+        st.code(active_coverage.get("label", "Chroma local"))
+        indexed = active_coverage.get("indexed_documents", 0)
+        total = active_coverage.get("total_documents", indexed)
+        chunks = active_coverage.get("chunk_count", 0)
+        st.success(f"{indexed} document(s) indexé(s) sur {total} dans Chroma")
+        if chunks:
+            st.caption(f"{chunks} extrait(s) vectorisé(s)")
+        return
+
+    st.code(active_coverage.get("label") if active_coverage else "Gemini File Search")
+    indexed = database_coverage.get("indexed_documents", 0)
+    total = database_coverage.get("total_documents", 0)
+    if total:
+        st.success(f"{indexed} document(s) indexé(s) sur {total} dans l'inventaire")
+
+
+def render_sidebar(config, inventory: dict, database_coverage: dict, active_coverage: dict | None = None) -> str:
     with st.sidebar:
         st.header("Paramètres")
 
@@ -269,17 +299,11 @@ def render_sidebar(config, inventory: dict, database_coverage: dict) -> str:
             help="Seuls les modèles compatibles avec Gemini File Search sont listés ici.",
         )
 
-        st.markdown("### Base documentaire")
-        st.code(config.file_search_store)
+        _render_sidebar_coverage(database_coverage, active_coverage)
 
         st.markdown("### Inventaire")
         if not inventory:
             st.warning("Inventaire non trouvé ou vide")
-
-        indexed = database_coverage.get("indexed_documents", 0)
-        total = database_coverage.get("total_documents", 0)
-        if total:
-            st.success(f"{indexed} document(s) indexé(s) sur {total} dans l'inventaire")
 
         st.markdown("### Conseils")
         st.write("Pose une question précise : thème, période, type de document, recommandation, position ou comparaison.")
