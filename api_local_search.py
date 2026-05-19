@@ -3,7 +3,12 @@ import os
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from src.local_retrieval import LocalRetrievalUnavailable, get_local_index_stats, search_local
+from src.local_retrieval import (
+    LocalRetrievalUnavailable,
+    get_local_index_documents,
+    get_local_index_stats,
+    search_local,
+)
 
 
 API_TOKEN = os.getenv("LOCAL_SEARCH_API_TOKEN", "")
@@ -34,6 +39,15 @@ def stats(x_api_token: str | None = Header(default=None)):
     check_token(x_api_token)
     try:
         return get_local_index_stats()
+    except LocalRetrievalUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@app.get("/documents")
+def documents(x_api_token: str | None = Header(default=None)):
+    check_token(x_api_token)
+    try:
+        return {"documents": get_local_index_documents()}
     except LocalRetrievalUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
