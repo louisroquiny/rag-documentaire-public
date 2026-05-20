@@ -94,7 +94,7 @@ def get_api_stats_cached() -> dict:
     return get_local_api_stats()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_api_documents_cached() -> list[dict]:
     return get_local_api_documents()
 
@@ -104,25 +104,33 @@ def get_local_stats_cached() -> dict:
     return get_local_index_stats()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_local_documents_cached() -> list[dict]:
     return get_local_index_documents()
 
 
-def get_active_engine_data(search_engine: str) -> tuple[dict | None, list[dict] | None, str | None]:
+def get_active_engine_stats(search_engine: str) -> tuple[dict | None, str | None]:
     if search_engine == "API locale":
         try:
-            return get_api_stats_cached(), get_api_documents_cached(), None
+            return get_api_stats_cached(), None
         except LocalSearchApiUnavailable as e:
-            return None, None, str(e)
+            return None, str(e)
 
     if search_engine == "Recherche locale directe":
         try:
-            return get_local_stats_cached(), get_local_documents_cached(), None
+            return get_local_stats_cached(), None
         except LocalRetrievalUnavailable as e:
-            return None, None, str(e)
+            return None, str(e)
 
-    return None, DATABASE_COVERAGE.get("indexed_rows", []), None
+    return None, None
+
+
+def load_active_catalogue_rows(search_engine: str) -> list[dict] | None:
+    if search_engine == "API locale":
+        return get_api_documents_cached()
+    if search_engine == "Recherche locale directe":
+        return get_local_documents_cached()
+    return DATABASE_COVERAGE.get("indexed_rows", [])
 
 
 def build_active_coverage(search_engine: str, stats: dict | None) -> dict | None:
@@ -248,18 +256,28 @@ def generate_with_local_api(question: str, model: str) -> tuple[str, list[dict],
     return generate_from_hits(question, model, hits)
 
 
-def render_active_catalogue(search_engine: str, rows: list[dict] | None) -> None:
+def render_active_catalogue(search_engine: str) -> None:
     if search_engine == "Gemini File Search":
         render_catalogue(DATABASE_COVERAGE)
         return
 
     st.markdown(f"### Catalogue — {search_engine}")
+    st.caption("Le catalogue Chroma est chargé à la demande pour garder l'application rapide.")
 
-    if rows is None:
-        st.warning("Catalogue Chroma indisponible : impossible de récupérer les documents indexés.")
+    load_key = f"load_catalogue_{search_engine}"
+    if st.button("Charger / actualiser le catalogue", key=load_key):
+        st.session_state[load_key] = True
+
+    if not st.session_state.get(load_key):
+        st.info("Clique sur le bouton ci-dessus pour charger les documents indexés dans Chroma.")
         return
 
-    render_catalogue_from_rows(rows, source_label="les documents Chroma indexés")
+    try:
+        with st.spinner("Chargement du catalogue Chroma..."):
+            rows = load_active_catalogue_rows(search_engine)
+        render_catalogue_from_rows(rows or [], source_label="les documents Chroma indexés")
+    except (LocalSearchApiUnavailable, LocalRetrievalUnavailable) as e:
+        st.warning(f"Catalogue Chroma indisponible : {e}")
 
 
 def render_coverage_tab(database_coverage: dict, search_engine: str, stats: dict | None, error: str | None) -> None:
@@ -332,7 +350,7 @@ with st.sidebar:
         help="API locale interroge le serveur interne. Recherche locale directe lit chroma_db sur la même machine. Gemini File Search garde l'ancien comportement.",
     )
 
-active_stats, active_rows, active_error = get_active_engine_data(search_engine)
+active_stats, active_error = get_active_engine_stats(search_engine)
 active_coverage = build_active_coverage(search_engine, active_stats)
 
 model = render_sidebar(
@@ -342,7 +360,11 @@ model = render_sidebar(
     active_coverage=active_coverage,
 )
 
-filter_rows = active_rows or []
+if search_engine == "Gemini File Search":
+    filter_rows = DATABASE_COVERAGE.get("indexed_rows", [])
+else:
+    filter_rows = []
+
 document_types = ["Tous"] + distinct_values(filter_rows, "document_type")
 years = ["Toutes"] + sorted(distinct_values(filter_rows, "year"), reverse=True)
 themes = ["Tous"] + distinct_values(filter_rows, "theme")
@@ -354,9 +376,15 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("#### Cadrer la prochaine question")
-    st.selectbox("Type", document_types, key="rag_document_type")
-    st.selectbox("Année", years, key="rag_year")
-    st.selectbox("Thème", themes, key="rag_theme")
+    if search_engine == "Gemini File Search":
+        st.selectbox("Type", document_types, key="rag_document_type")
+        st.selectbox("Année", years, key="rag_year")
+        st.selectbox("Thème", themes, key="rag_theme")
+    else:
+        st.caption("Les filtres détaillés Chroma sont disponibles dans l'onglet Catalogue après chargement.")
+        st.session_state["rag_document_type"] = "Tous"
+        st.session_state["rag_year"] = "Toutes"
+        st.session_state["rag_theme"] = "Tous"
 
     st.markdown("### Questions suggérées")
     for index, suggested_question in enumerate(SUGGESTED_QUESTIONS):
@@ -449,7 +477,7 @@ with chat_tab:
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 with catalogue_tab:
-    render_active_catalogue(search_engine, active_rows)
+    render_active_catalogue(search_engine)
 
 with coverage_tab:
     render_coverage_tab(DATABASE_COVERAGE, search_engine, active_stats, active_error)
