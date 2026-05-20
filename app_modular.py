@@ -3,9 +3,15 @@ from google.genai import types
 
 from src.config import create_gemini_client, load_config
 from src.inventory import compute_database_coverage, database_coverage_sentence, load_inventory
-from src.local_api_client import LocalSearchApiUnavailable, get_local_api_stats, search_local_api
+from src.local_api_client import (
+    LocalSearchApiUnavailable,
+    get_local_api_documents,
+    get_local_api_stats,
+    search_local_api,
+)
 from src.local_retrieval import (
     LocalRetrievalUnavailable,
+    get_local_index_documents,
     get_local_index_stats,
     hits_to_context,
     hits_to_linked_documents,
@@ -14,6 +20,7 @@ from src.local_retrieval import (
 from src.prompts import HECTOR_INSTRUCTIONS, build_prompt, build_prompt_with_local_context
 from src.source_linking import build_linked_documents, extract_used_source_titles
 from src.ui import (
+    display_document_card,
     display_linked_documents,
     render_catalogue,
     render_coverage_box,
@@ -82,10 +89,72 @@ def build_user_constraints() -> str:
     return "\n".join(constraints)
 
 
-def get_active_coverage_message(search_engine: str) -> str:
+@st.cache_data(ttl=60, show_spinner=False)
+def get_api_stats_cached() -> dict:
+    return get_local_api_stats()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_api_documents_cached() -> list[dict]:
+    return get_local_api_documents()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_local_stats_cached() -> dict:
+    return get_local_index_stats()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_local_documents_cached() -> list[dict]:
+    return get_local_index_documents()
+
+
+def get_active_engine_data(search_engine: str) -> tuple[dict | None, list[dict] | None, str | None]:
     if search_engine == "API locale":
         try:
-            stats = get_local_api_stats()
+            return get_api_stats_cached(), get_api_documents_cached(), None
+        except LocalSearchApiUnavailable as e:
+            return None, None, str(e)
+
+    if search_engine == "Recherche locale directe":
+        try:
+            return get_local_stats_cached(), get_local_documents_cached(), None
+        except LocalRetrievalUnavailable as e:
+            return None, None, str(e)
+
+    return None, DATABASE_COVERAGE.get("indexed_rows", []), None
+
+
+def build_active_coverage(search_engine: str, stats: dict | None) -> dict | None:
+    if search_engine == "API locale" and stats:
+        return {
+            "engine": "api",
+            "label": f"API locale Chroma / {stats.get('collection', 'chroma')}",
+            "indexed_documents": stats.get("indexed_documents", 0),
+            "total_documents": stats.get("indexed_documents", 0),
+            "chunk_count": stats.get("chunk_count", 0),
+        }
+
+    if search_engine == "Recherche locale directe" and stats:
+        return {
+            "engine": "local",
+            "label": f"Chroma local / {stats.get('collection', 'chroma')}",
+            "indexed_documents": stats.get("indexed_documents", 0),
+            "total_documents": stats.get("indexed_documents", 0),
+            "chunk_count": stats.get("chunk_count", 0),
+        }
+
+    return {
+        "engine": "file_search",
+        "label": config.file_search_store,
+    }
+
+
+def get_active_coverage_message(search_engine: str, stats: dict | None, error: str | None = None) -> str:
+    if search_engine == "API locale":
+        if error:
+            return f"API locale configurée, mais statistiques Chroma indisponibles : {error}"
+        if stats:
             indexed = stats.get("indexed_documents", 0)
             chunks = stats.get("chunk_count", 0)
             collection = stats.get("collection", "chroma")
@@ -95,12 +164,11 @@ def get_active_coverage_message(search_engine: str) -> str:
                 f"{chunks} extrait(s) vectorisé(s), collection `{collection}`. "
                 f"Les documents consultables remontent jusqu'au {oldest}."
             )
-        except LocalSearchApiUnavailable as e:
-            return f"API locale configurée, mais statistiques Chroma indisponibles : {e}"
 
     if search_engine == "Recherche locale directe":
-        try:
-            stats = get_local_index_stats()
+        if error:
+            return f"Recherche locale directe sélectionnée, mais statistiques Chroma indisponibles : {error}"
+        if stats:
             indexed = stats.get("indexed_documents", 0)
             chunks = stats.get("chunk_count", 0)
             collection = stats.get("collection", "chroma")
@@ -110,8 +178,6 @@ def get_active_coverage_message(search_engine: str) -> str:
                 f"{chunks} extrait(s) vectorisé(s), collection `{collection}`. "
                 f"Les documents consultables remontent jusqu'au {oldest}."
             )
-        except LocalRetrievalUnavailable as e:
-            return f"Recherche locale directe sélectionnée, mais statistiques Chroma indisponibles : {e}"
 
     return database_coverage_sentence(DATABASE_COVERAGE)
 
@@ -182,23 +248,47 @@ def generate_with_local_api(question: str, model: str) -> tuple[str, list[dict],
     return generate_from_hits(question, model, hits)
 
 
-def render_coverage_tab(database_coverage: dict, search_engine: str) -> None:
+def render_active_catalogue(search_engine: str, rows: list[dict] | None) -> None:
+    if search_engine == "Gemini File Search":
+        render_catalogue(DATABASE_COVERAGE)
+        return
+
+    st.markdown(f"### Catalogue — {search_engine}")
+
+    if rows is None:
+        st.warning("Catalogue Chroma indisponible : impossible de récupérer les documents indexés.")
+        return
+
+    if not rows:
+        st.info("Aucun document trouvé dans le catalogue Chroma.")
+        return
+
+    st.caption(f"{len(rows)} document(s) disponible(s) dans le moteur sélectionné")
+
+    for row in rows[:200]:
+        display_document_card(row)
+        st.markdown("---")
+
+    if len(rows) > 200:
+        st.info("Affichage limité aux 200 premiers résultats. Utilise les filtres de la question ou affine le catalogue dans une version ultérieure.")
+
+
+def render_coverage_tab(database_coverage: dict, search_engine: str, stats: dict | None, error: str | None) -> None:
     st.markdown("### Couverture de la base")
 
     if search_engine in ["API locale", "Recherche locale directe"]:
-        try:
-            stats = get_local_api_stats() if search_engine == "API locale" else get_local_index_stats()
+        if error:
+            st.warning(f"Statistiques Chroma indisponibles : {error}")
+        elif stats:
             col1, col2, col3 = st.columns(3)
             col1.metric("Documents Chroma", stats.get("indexed_documents", 0))
             col2.metric("Extraits vectorisés", stats.get("chunk_count", 0))
             col3.metric("Moteur", search_engine)
-            st.info(get_active_coverage_message(search_engine))
+            st.info(get_active_coverage_message(search_engine, stats, error))
             st.write(f"**Collection Chroma :** `{stats.get('collection', '')}`")
             st.write(f"**Document le plus ancien :** {stats.get('oldest_document') or 'date inconnue'}")
             st.write(f"**Document le plus récent :** {stats.get('newest_document') or 'date inconnue'}")
             return
-        except (LocalSearchApiUnavailable, LocalRetrievalUnavailable) as e:
-            st.warning(f"Statistiques Chroma indisponibles : {e}")
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Documents inventoriés", database_coverage.get("total_documents", 0))
@@ -244,30 +334,35 @@ st.caption(
     "et branché sur les documents publics indexés."
 )
 
-model = render_sidebar(
-    config=config,
-    inventory=INVENTORY,
-    database_coverage=DATABASE_COVERAGE,
-)
-
-indexed_rows = DATABASE_COVERAGE.get("indexed_rows", [])
-document_types = ["Tous"] + distinct_values(indexed_rows, "document_type")
-years = ["Toutes"] + sorted(distinct_values(indexed_rows, "year"), reverse=True)
-themes = ["Tous"] + distinct_values(indexed_rows, "theme")
-
 with st.sidebar:
     st.markdown("### Conversation")
-    if st.button("Nouvelle conversation"):
-        for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
-            st.session_state.pop(key, None)
-        st.rerun()
-
     search_engine = st.selectbox(
         "Moteur documentaire",
         ["API locale", "Recherche locale directe", "Gemini File Search"],
         index=0,
         help="API locale interroge le serveur interne. Recherche locale directe lit chroma_db sur la même machine. Gemini File Search garde l'ancien comportement.",
     )
+
+active_stats, active_rows, active_error = get_active_engine_data(search_engine)
+active_coverage = build_active_coverage(search_engine, active_stats)
+
+model = render_sidebar(
+    config=config,
+    inventory=INVENTORY,
+    database_coverage=DATABASE_COVERAGE,
+    active_coverage=active_coverage,
+)
+
+filter_rows = active_rows or []
+document_types = ["Tous"] + distinct_values(filter_rows, "document_type")
+years = ["Toutes"] + sorted(distinct_values(filter_rows, "year"), reverse=True)
+themes = ["Tous"] + distinct_values(filter_rows, "theme")
+
+with st.sidebar:
+    if st.button("Nouvelle conversation"):
+        for key in ["messages", "last_question", "last_answer", "last_documents", "last_model", "pending_question"]:
+            st.session_state.pop(key, None)
+        st.rerun()
 
     st.markdown("#### Cadrer la prochaine question")
     st.selectbox("Type", document_types, key="rag_document_type")
@@ -280,7 +375,7 @@ with st.sidebar:
             st.session_state.pending_question = suggested_question
             st.rerun()
 
-render_coverage_box(get_active_coverage_message(search_engine))
+render_coverage_box(get_active_coverage_message(search_engine, active_stats, active_error))
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -365,10 +460,10 @@ with chat_tab:
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 with catalogue_tab:
-    render_catalogue(DATABASE_COVERAGE)
+    render_active_catalogue(search_engine, active_rows)
 
 with coverage_tab:
-    render_coverage_tab(DATABASE_COVERAGE, search_engine)
+    render_coverage_tab(DATABASE_COVERAGE, search_engine, active_stats, active_error)
 
 with limits_tab:
     render_limits_tab()
