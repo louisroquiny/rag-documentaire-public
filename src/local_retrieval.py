@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -142,6 +143,7 @@ def _metadata_to_document_row(meta: dict) -> dict:
     }
 
 
+@lru_cache(maxsize=1)
 def get_local_index_documents() -> list[dict]:
     collection = get_collection()
     chunk_count = collection.count()
@@ -160,6 +162,7 @@ def get_local_index_documents() -> list[dict]:
     )
 
 
+@lru_cache(maxsize=1)
 def get_local_index_stats() -> dict:
     collection = get_collection()
     chunk_count = collection.count()
@@ -189,6 +192,11 @@ def get_local_index_stats() -> dict:
         "oldest_document": oldest,
         "newest_document": newest,
     }
+
+
+def clear_local_index_cache() -> None:
+    get_local_index_documents.cache_clear()
+    get_local_index_stats.cache_clear()
 
 
 def hits_to_context(hits: list[dict]) -> str:
