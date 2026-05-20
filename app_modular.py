@@ -20,9 +20,9 @@ from src.local_retrieval import (
 from src.prompts import HECTOR_INSTRUCTIONS, build_prompt, build_prompt_with_local_context
 from src.source_linking import build_linked_documents, extract_used_source_titles
 from src.ui import (
-    display_document_card,
     display_linked_documents,
     render_catalogue,
+    render_catalogue_from_rows,
     render_coverage_box,
     render_instructions,
     render_sidebar,
@@ -259,18 +259,7 @@ def render_active_catalogue(search_engine: str, rows: list[dict] | None) -> None
         st.warning("Catalogue Chroma indisponible : impossible de récupérer les documents indexés.")
         return
 
-    if not rows:
-        st.info("Aucun document trouvé dans le catalogue Chroma.")
-        return
-
-    st.caption(f"{len(rows)} document(s) disponible(s) dans le moteur sélectionné")
-
-    for row in rows[:200]:
-        display_document_card(row)
-        st.markdown("---")
-
-    if len(rows) > 200:
-        st.info("Affichage limité aux 200 premiers résultats. Utilise les filtres de la question ou affine le catalogue dans une version ultérieure.")
+    render_catalogue_from_rows(rows, source_label="les documents Chroma indexés")
 
 
 def render_coverage_tab(database_coverage: dict, search_engine: str, stats: dict | None, error: str | None) -> None:
