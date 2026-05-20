@@ -182,11 +182,9 @@ def _sort_catalogue_rows(rows: list[dict], sort_mode: str) -> list[dict]:
     return sorted(rows, key=lambda row: row.get("date_iso") or row.get("date") or "", reverse=True)
 
 
-def render_catalogue(database_coverage: dict) -> None:
-    rows = inventory_rows(database_coverage)
-
+def render_catalogue_from_rows(rows: list[dict], source_label: str = "documents indexés") -> None:
     if not rows:
-        st.info("Catalogue indisponible : inventaire non chargé.")
+        st.info("Catalogue indisponible : aucun document chargé pour le moteur sélectionné.")
         return
 
     col_reset, col_sort = st.columns([1, 2])
@@ -247,7 +245,7 @@ def render_catalogue(database_coverage: dict) -> None:
 
     filtered = _sort_catalogue_rows(filtered, sort_mode)
 
-    st.caption(f"{len(filtered)} document(s) trouvé(s) dans les documents indexés")
+    st.caption(f"{len(filtered)} document(s) trouvé(s) dans {source_label}")
 
     with st.expander("Afficher le catalogue des documents indexés", expanded=False):
         for row in filtered[:200]:
@@ -256,6 +254,10 @@ def render_catalogue(database_coverage: dict) -> None:
 
         if len(filtered) > 200:
             st.info("Affichage limité aux 200 premiers résultats. Affine les filtres pour voir moins de documents.")
+
+
+def render_catalogue(database_coverage: dict) -> None:
+    render_catalogue_from_rows(inventory_rows(database_coverage), source_label="les documents indexés")
 
 
 def _render_sidebar_coverage(database_coverage: dict, active_coverage: dict | None) -> None:
